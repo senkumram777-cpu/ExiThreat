@@ -29,7 +29,19 @@ from an ExiThreat session.
 - `server/` — Node server deployed on Fly.io
 - Git repository; main branch is `master`.
 
-The two codebases currently share no code, backend or configuration: ExiThreat uses its own
-Express/Postgres backend, ProMic uses Firebase. When a task spans both (shared API contract,
-auth, data model), read the relevant ProMic files directly rather than assuming, and record
-any integration that gets built here.
+The two codebases share no code or backend: ExiThreat uses its own Express/Postgres backend,
+ProMic uses Firebase. When a task spans both, read the relevant ProMic files directly rather
+than assuming, and record any integration that gets built here.
+
+### Integration: ProMic backups
+
+A user can open their ProMic Host account's backup audio/video at `/promic`.
+
+- Linking: the ProMic app (Settings → Link ExiThreat Account) shows a one-time code;
+  `POST /api/promic/link` redeems it from `exithreat_link_codes/{code}` in ProMic's Realtime
+  Database and stores the user → host uid mapping in `ProMicLink`.
+- Access: `backend/src/services/promicService.ts` uses the Firebase Admin SDK with a ProMic
+  service account (`PROMIC_*` env vars, see `backend/.env.example`) to list segment metadata
+  and decrypt Storage blobs server-side. The browser never gets Firebase credentials or the
+  backup key; media comes back as WAV/MP4 from `/api/promic/backups/{audio|video}/:id`.
+- Without the `PROMIC_*` env vars the routes answer 503 and the rest of the app is unaffected.

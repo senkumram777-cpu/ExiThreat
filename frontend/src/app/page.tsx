@@ -72,7 +72,7 @@ export default function HomePage() {
           {
             icon: '⚖',
             title: 'Credibility Weightage',
-            body: 'Each group's push percentage accumulates into a total weight score, quantifying how many people validated the story.',
+            body: "Each group's push percentage accumulates into a total weight score, quantifying how many people validated the story.",
           },
           {
             icon: '💬',

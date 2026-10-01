@@ -33,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </a>
             <div className="flex gap-4 text-sm font-mono text-gray-400">
               <a href="/groups" className="hover:text-accent-teal transition-colors">Groups</a>
+              <a href="/promic" className="hover:text-accent-teal transition-colors">Backups</a>
               <a href="/post/new" className="text-accent-red hover:text-accent-red/80 transition-colors">+ Disclose</a>
             </div>
           </div>

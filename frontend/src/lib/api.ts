@@ -69,6 +69,32 @@ export interface ChatMessage {
   user: { id: string; username: string };
 }
 
+export interface ProMicLinkStatus {
+  linked: boolean;
+  hostName?: string | null;
+  linkedAt?: string;
+}
+
+export interface ProMicAudioBackup {
+  id: string;
+  startTimestamp: number;
+  endTimestamp: number;
+  durationMs: number;
+  isThreatClip: boolean;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface ProMicVideoBackup {
+  id: string;
+  cameraFacing: 'FRONT' | 'BACK';
+  startTimestamp: number;
+  endTimestamp: number;
+  durationMs: number;
+  lat: number | null;
+  lon: number | null;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function getToken(): string | null {
@@ -155,4 +181,18 @@ export const push = {
 
 export const weightage = {
   get: (postId: string) => req<WeightageResult>('GET', `/weightage/${postId}`),
+};
+
+// ── ProMic ────────────────────────────────────────────────────────────────
+
+export const promic = {
+  getLink: () => req<ProMicLinkStatus>('GET', '/promic/link'),
+  /** Redeems a one-time code from the ProMic app (Settings → Link ExiThreat Account). */
+  link: (code: string) => req<ProMicLinkStatus>('POST', '/promic/link', { code }),
+  unlink: () => req<ProMicLinkStatus>('DELETE', '/promic/link'),
+  listBackups: () =>
+    req<{ audio: ProMicAudioBackup[]; video: ProMicVideoBackup[] }>('GET', '/promic/backups'),
+  /** Fetches the decrypted backup (WAV or MP4) as a Blob — play it via an object URL. */
+  getMedia: (kind: 'audio' | 'video', id: string) =>
+    req<Blob>('GET', `/promic/backups/${kind}/${id}`, undefined, true),
 };

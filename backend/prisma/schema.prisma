@@ -19,6 +19,7 @@ model User {
   comments         Comment[]
   viewRecords      ViewRecord[]
   chatMessages     ChatMessage[]
+  proMicLink       ProMicLink?
 }
 
 model Group {
@@ -130,4 +131,16 @@ model ChatMessage {
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Links an ExiThreat account to the same person's ProMic host account (a Firebase uid in the
+// ProMic project), established by redeeming a one-time code generated on the host's own device.
+// Grants this user read access to that host's backup audio/video — see routes/promic.ts.
+model ProMicLink {
+  id       String   @id @default(uuid())
+  userId   String   @unique
+  hostId   String
+  linkedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

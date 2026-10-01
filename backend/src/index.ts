@@ -10,6 +10,7 @@ import postsRouter from './routes/posts';
 import groupsRouter from './routes/groups';
 import pushRouter from './routes/push';
 import weightageRouter from './routes/weightage';
+import promicRouter from './routes/promic';
 
 export const prisma = new PrismaClient();
 
@@ -41,6 +42,7 @@ app.use('/api/posts', postsRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/weightage', weightageRouter);
+app.use('/api/promic', promicRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 

@@ -33,6 +33,10 @@ services:
       JWT_SECRET: change-me-in-production-use-a-long-random-secret
       FRONTEND_ORIGIN: http://localhost:3000
       PORT: 4000
+      # ProMic integration (optional) — see backend/.env.example
+      PROMIC_DATABASE_URL: https://promic-c5567-default-rtdb.firebaseio.com
+      PROMIC_STORAGE_BUCKET: promic-c5567.firebasestorage.app
+      PROMIC_SERVICE_ACCOUNT_JSON: ${PROMIC_SERVICE_ACCOUNT_JSON:-}
     ports:
       - '4000:4000'
 
