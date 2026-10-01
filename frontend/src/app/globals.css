@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0d0d1a;
+  --surface: #1a1a2e;
+  --border: #2a2a4a;
+  --text: #e0e0e0;
+  --muted: #6b7280;
+  --accent-red: #e94560;
+  --accent-teal: #00b4d8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', Courier, monospace;
+  min-height: 100dvh;
+  overscroll-behavior: none;
+}
+
+/* Hide scrollbar on Chrome/Safari but keep functionality */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+a {
+  color: var(--accent-teal);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}

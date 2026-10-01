@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  groupMemberships GroupMember[]
+  posts            Post[]        @relation("OCPosts")
+  pushVotes        PushVote[]
+  comments         Comment[]
+  viewRecords      ViewRecord[]
+  chatMessages     ChatMessage[]
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String
+  trustScore  Float    @default(0.0)
+  createdAt   DateTime @default(now())
+
+  members      GroupMember[]
+  currentPosts Post[]
+  postHistory  PostHistory[]
+  pushVotes    PushVote[]
+  chatMessages ChatMessage[]
+}
+
+model GroupMember {
+  id             String   @id @default(uuid())
+  groupId        String
+  userId         String
+  joinedAt       DateTime @default(now())
+  visitCount     Int      @default(0)
+  totalTimeSpent Int      @default(0) // seconds
+  readThroughCount Int    @default(0)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model Post {
+  id               String    @id @default(uuid())
+  originalContent  String    // stored encrypted; rendered as PNG, never as raw text to client
+  redactedContent  String
+  ocUserId         String
+  currentGroupId   String
+  totalWeight      Float     @default(0.0)
+  lastManualPushAt DateTime?
+  createdAt        DateTime  @default(now())
+
+  oc          User          @relation("OCPosts", fields: [ocUserId], references: [id])
+  currentGroup Group        @relation(fields: [currentGroupId], references: [id])
+  pushVotes   PushVote[]
+  history     PostHistory[]
+  comments    Comment[]
+  viewRecords ViewRecord[]
+}
+
+// Tracks each vote cast on a post within a specific group
+model PushVote {
+  id      String   @id @default(uuid())
+  postId  String
+  groupId String
+  userId  String
+  votedAt DateTime @default(now())
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, groupId, userId]) // one vote per member per post per group
+}
+
+// Immutable record of each group a post has passed through
+model PostHistory {
+  id             String   @id @default(uuid())
+  postId         String
+  groupId        String
+  pushPercentage Float    // % of members who voted push in this group
+  movedAt        DateTime @default(now())
+  wasManualPush  Boolean  @default(false)
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+}
+
+// Tagged comments that travel with the post across groups
+model Comment {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Server-side record of who has viewed unredacted content (RxDB is primary, this is audit backup)
+model ViewRecord {
+  id       String   @id @default(uuid())
+  postId   String
+  userId   String
+  viewedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+// Group-local chat — does NOT travel with posts
+model ChatMessage {
+  id        String   @id @default(uuid())
+  groupId   String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

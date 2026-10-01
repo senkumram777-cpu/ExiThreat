@@ -1,0 +1,54 @@
+services:
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: exithreat_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: exithreat
+      POSTGRES_PASSWORD: exithreat_dev
+      POSTGRES_DB: exithreat
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U exithreat']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend ──────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: exithreat_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://exithreat:exithreat_dev@postgres:5432/exithreat
+      JWT_SECRET: change-me-in-production-use-a-long-random-secret
+      FRONTEND_ORIGIN: http://localhost:3000
+      PORT: 4000
+    ports:
+      - '4000:4000'
+
+  # ── Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: exithreat_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres_data:
