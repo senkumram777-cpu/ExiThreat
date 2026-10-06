@@ -17,6 +17,10 @@ export const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
+// Behind a hosting proxy (Fly.io) the caller's address arrives in X-Forwarded-For; without
+// this every visitor would share one rate-limit bucket. Unset locally.
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY));
+
 // ── Security headers ───────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({

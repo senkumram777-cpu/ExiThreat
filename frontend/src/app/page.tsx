@@ -54,6 +54,11 @@ export default function HomePage() {
             </>
           )}
         </div>
+        {!isLoggedIn && (
+          <Link href="/law-enforcement" className="text-xs font-mono text-gray-500 hover:text-accent-teal transition-colors">
+            Law enforcement sign in
+          </Link>
+        )}
       </section>
 
       {/* How it works */}

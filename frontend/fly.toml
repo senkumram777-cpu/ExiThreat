@@ -1,0 +1,24 @@
+# Hosted ExiThreat website. Deploy from this folder: fly deploy
+
+app = 'exithreat'
+primary_region = 'sin'
+
+[build]
+  [build.args]
+    NEXT_PUBLIC_API_URL = 'https://exithreat-api.fly.dev/api'
+
+[env]
+  PORT = '3000'
+  HOSTNAME = '0.0.0.0'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

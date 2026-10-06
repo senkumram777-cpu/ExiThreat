@@ -64,6 +64,12 @@ export default function LoginPage() {
           Register anonymously
         </Link>
       </p>
+      <p className="text-center text-xs font-mono text-gray-500 mt-2">
+        Police officer?{' '}
+        <Link href="/law-enforcement" className="text-accent-teal">
+          Law enforcement sign in
+        </Link>
+      </p>
     </div>
   );
 }

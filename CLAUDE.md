@@ -45,3 +45,21 @@ A user can open their ProMic Host account's backup audio/video at `/promic`.
   and decrypt Storage blobs server-side. The browser never gets Firebase credentials or the
   backup key; media comes back as WAV/MP4 from `/api/promic/backups/{audio|video}/:id`.
 - Without the `PROMIC_*` env vars the routes answer 503 and the rest of the app is unaffected.
+
+### Integration: ProMic law-enforcement sign in
+
+`/law-enforcement` (`frontend/src/app/law-enforcement/page.tsx`) is a separate login for police
+officers. Officers are not ExiThreat users: their accounts are created in ProMic's admin panel,
+and the page calls ProMic's Cloud Functions directly (`leLogin`, `leRequestAccess`,
+`leVerifyHostCode`, `leVerifyEmailCode`, `leGetAudio` in the ProMic repo's `functions/le.js`).
+It never uses the ExiThreat token or backend, so an officer sees only the recording flow. The
+credentials email ProMic sends links to this page, so the route must keep its path.
+
+## Hosting (Fly.io)
+
+- Website: app `exithreat` → https://exithreat.fly.dev (`frontend/fly.toml`)
+- API: app `exithreat-api` → https://exithreat-api.fly.dev/api (`backend/fly.toml`)
+- Database: Fly Postgres app `exithreat-db`, attached to `exithreat-api` as `DATABASE_URL`
+- Deploy with `fly deploy --ha=false` from `frontend/` or `backend/`. The API URL is compiled
+  into the website at build time (`NEXT_PUBLIC_API_URL` build arg in `frontend/fly.toml`).
+- There is no Prisma migration history; the backend image runs `prisma db push` on start.
