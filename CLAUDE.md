@@ -63,3 +63,14 @@ credentials email ProMic sends links to this page, so the route must keep its pa
 - Deploy with `fly deploy --ha=false` from `frontend/` or `backend/`. The API URL is compiled
   into the website at build time (`NEXT_PUBLIC_API_URL` build arg in `frontend/fly.toml`).
 - There is no Prisma migration history; the backend image runs `prisma db push` on start.
+
+The page also drives ProMic's fallback for a phone that cannot be reached (`leFallbackStatus`,
+`leStartFallback`): a Connected User's code, then a ProMic administrator's approval, which the
+page waits for by polling.
+
+`AreaDashboard.tsx` (shown once the officer is signed in) is the station map (Leaflet with
+OpenStreetMap tiles), the area's AI threat / SOS alerts and the shared live streams, from
+ProMic's `leSetStation`, `leOverview` and `leJoinLive`. `liveAudio.ts` plays a stream in the
+browser: it connects to ProMic's relay and decrypts each frame, so it must match ProMic's
+`AudioFrameCodec` (60-byte header) and `AudioEncryption` (IV(12) || ciphertext || tag, 16 kHz
+mono 16-bit PCM).
