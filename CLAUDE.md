@@ -74,3 +74,7 @@ ProMic's `leSetStation`, `leOverview` and `leJoinLive`. `liveAudio.ts` plays a s
 browser: it connects to ProMic's relay and decrypts each frame, so it must match ProMic's
 `AudioFrameCodec` (60-byte header) and `AudioEncryption` (IV(12) || ciphertext || tag, 16 kHz
 mono 16-bit PCM).
+
+While an officer is listening, `AreaDashboard.tsx` calls ProMic's `leLivePing` every 20 seconds (and
+once with `leaving` on stopping), which is what lets the ProMic user's app show that police are
+listening.

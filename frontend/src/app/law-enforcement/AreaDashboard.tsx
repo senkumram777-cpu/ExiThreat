@@ -192,6 +192,20 @@ export default function AreaDashboard({
 
   useEffect(() => () => player.current?.stop(), []);
 
+  // While an officer is listening, ProMic is told every 20 seconds, and once more on stopping,
+  // so the user's own app can show "Law enforcement is listening" and take it down again.
+  const listeningHostId = listening && listening.state !== 'ended' ? listening.hostId : null;
+  useEffect(() => {
+    if (!listeningHostId) return;
+    const tell = (leaving: boolean) =>
+      call('leLivePing', { hostId: listeningHostId, leaving }).catch(() => undefined);
+    const timer = setInterval(() => tell(false), 20_000);
+    return () => {
+      clearInterval(timer);
+      tell(true);
+    };
+  }, [listeningHostId, call]);
+
   // Redraw the station and the alert / live positions whenever fresh data arrives.
   useEffect(() => {
     const L = leaflet.current;
