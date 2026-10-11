@@ -37,6 +37,9 @@ interface Alert {
   // SOS only: whether it is still going, and when it ended (0 when ProMic has no time for it).
   active?: boolean;
   endedAt?: number;
+  // No town or village where the alert was raised, and the nearest named place or wider area.
+  remote?: boolean;
+  place?: string;
 }
 
 interface AlertGroup {
@@ -59,6 +62,17 @@ interface LiveStream {
   since: number;
   // No Connected User is listening to this stream: police are the only people who can hear it.
   policeOnly?: boolean;
+  // Where the user is: no town or village there, and the nearest named place or wider area.
+  remote?: boolean;
+  place?: string;
+  // How well their phone is reaching ProMic. `weak` is the phone's own report; `lost` means it
+  // has stopped reporting, and lat/lon are then the last known position, sent at `locationAt`.
+  weak?: boolean;
+  lost?: boolean;
+  lastSeenAt?: number;
+  locationAt?: number;
+  bars?: number;
+  net?: string;
 }
 
 interface Overview {
@@ -69,20 +83,23 @@ interface Overview {
 }
 
 // The filters above each list. They only choose what is shown: the map and the CSV keep everything.
-type AlertFilter = 'all' | 'sosActive' | 'sosEnded' | 'threat';
-type LiveFilter = 'all' | 'policeOnly' | 'withListeners';
+type AlertFilter = 'all' | 'sosActive' | 'sosEnded' | 'threat' | 'remote';
+type LiveFilter = 'all' | 'policeOnly' | 'withListeners' | 'remote' | 'poorSignal';
 
 const ALERT_FILTERS: { id: AlertFilter; label: string; matches: (alert: Alert) => boolean }[] = [
   { id: 'all', label: 'All', matches: () => true },
   { id: 'sosActive', label: 'Active SOS', matches: (alert) => alert.type === 'SOS' && !!alert.active },
   { id: 'sosEnded', label: 'Ended SOS', matches: (alert) => alert.type === 'SOS' && !alert.active },
   { id: 'threat', label: 'AI threats', matches: (alert) => alert.type !== 'SOS' },
+  { id: 'remote', label: 'Remote area', matches: (alert) => !!alert.remote },
 ];
 
 const LIVE_FILTERS: { id: LiveFilter; label: string; matches: (stream: LiveStream) => boolean }[] = [
   { id: 'all', label: 'All', matches: () => true },
   { id: 'policeOnly', label: 'Only police listening', matches: (stream) => !!stream.policeOnly },
   { id: 'withListeners', label: 'With other listeners', matches: (stream) => !stream.policeOnly },
+  { id: 'remote', label: 'Remote area', matches: (stream) => !!stream.remote },
+  { id: 'poorSignal', label: 'Weak or lost signal', matches: (stream) => !!stream.weak || !!stream.lost },
 ];
 
 /** A row of filter buttons, each with how many users it would show. */
@@ -114,6 +131,17 @@ function FilterChips<T extends string>({
     </div>
   );
 }
+
+const badgeClass = 'rounded-full px-2 py-0.5 font-mono text-[11px] font-bold';
+
+/** "1 of 4 bars, 2G", from what the phone reported; empty when it reported neither. */
+const signalReading = (stream: LiveStream) =>
+  [
+    typeof stream.bars === 'number' && stream.bars >= 0 ? `${stream.bars} of 4 bars` : '',
+    stream.net ?? '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 
 const TYPE_LABELS: Record<string, string> = {
   AI_THREAT_DETECTED: 'AI threat',
@@ -471,7 +499,7 @@ export default function AreaDashboard({
 
   function downloadCsv() {
     if (!overview) return;
-    const rows = [['Time', 'Type', 'Title', 'Message', 'User name', 'Phone', 'Latitude', 'Longitude', 'SOS ended'].join(',')];
+    const rows = [['Time', 'Type', 'Title', 'Message', 'User name', 'Phone', 'Latitude', 'Longitude', 'SOS ended', 'Place', 'Remote area'].join(',')];
     for (const group of overview.alerts) {
       for (const alert of group.alerts) {
         rows.push(
@@ -485,6 +513,8 @@ export default function AreaDashboard({
             hasPoint(alert) ? alert.lat : '',
             hasPoint(alert) ? alert.lon : '',
             alert.type !== 'SOS' ? '' : alert.active ? 'active' : alert.endedAt ? new Date(alert.endedAt).toLocaleString() : 'ended',
+            alert.place ?? '',
+            alert.remote ? 'yes' : '',
           ]
             .map(csvCell)
             .join(','),
@@ -589,6 +619,14 @@ export default function AreaDashboard({
                               SOS active now
                             </span>
                           )}
+                          {latest.remote && (
+                            <span
+                              title="There is no town or village where the latest alert was raised."
+                              className={`${badgeClass} bg-amber-500/20 text-amber-400`}
+                            >
+                              Remote area
+                            </span>
+                          )}
                           <span className="ml-auto font-mono text-xs text-accent-red">
                             {group.alerts.length} {group.alerts.length === 1 ? 'alert' : 'alerts'}
                           </span>
@@ -609,6 +647,12 @@ export default function AreaDashboard({
                               <span className="text-gray-200">{formatWhen(alert.ts)}</span> ·{' '}
                               {TYPE_LABELS[alert.type] ?? alert.type}
                               {alert.message ? ` · ${alert.message}` : ''} · {formatPoint(alert)}
+                              {alert.remote && (
+                                <span className="text-amber-400">
+                                  {' '}
+                                  · remote area{alert.place ? ` (${alert.place})` : ''}
+                                </span>
+                              )}
                               {alert.type === 'SOS' &&
                                 (alert.active ? (
                                   <span className="font-bold text-accent-red"> · active now</span>
@@ -680,6 +724,44 @@ export default function AreaDashboard({
                         {formatPoint(stream)}
                         {stream.since ? ` · live since ${formatWhen(stream.since)}` : ''}
                       </button>
+                      {(stream.remote || stream.weak || stream.lost) && (
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
+                          {stream.lost && (
+                            <span
+                              title="The phone has stopped reporting. It may be out of signal or switched off."
+                              className={`${badgeClass} bg-accent-red/20 text-accent-red`}
+                            >
+                              Connection lost
+                            </span>
+                          )}
+                          {stream.weak && (
+                            <span
+                              title="The phone has had a poor connection for a couple of minutes. The audio may break up or stop."
+                              className={`${badgeClass} bg-amber-500/20 text-amber-400`}
+                            >
+                              Weak signal{signalReading(stream) ? ` (${signalReading(stream)})` : ''}
+                            </span>
+                          )}
+                          {stream.remote && (
+                            <span
+                              title="There is no town or village at this position."
+                              className={`${badgeClass} bg-amber-500/20 text-amber-400`}
+                            >
+                              Remote area{stream.place ? ` (${stream.place})` : ''}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {stream.lost && (
+                        <p className="font-mono text-xs text-accent-red mt-2">
+                          Nothing from this phone since {formatWhen(stream.lastSeenAt ?? 0)}.{' '}
+                          {hasPoint(stream)
+                            ? `Last known position: ${formatPoint(stream)}${
+                                stream.locationAt ? `, sent ${formatWhen(stream.locationAt)}` : ''
+                              }.`
+                            : 'No position was received.'}
+                        </p>
+                      )}
                       <div className="flex items-center gap-3 mt-2">
                         <button
                           onClick={() => listen(stream)}

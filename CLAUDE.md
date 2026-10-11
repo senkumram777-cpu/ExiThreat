@@ -85,3 +85,9 @@ polling `leCheckInStatus` every 3 seconds. If the user does not answer with thei
 the microphone as frames in the same layout and with the same key as the stream, on the same
 socket. ProMic's relay passes them to the user's phone only, and the phone decides whether to
 play them (ProMic repo, `HostCheckIn.kt`).
+
+`leOverview` also says, per live stream, whether the user is in a remote area (`remote`, `place`),
+has a weak signal (`weak`, `bars`, `net`) or has stopped reporting (`lost`, `lastSeenAt`, with
+`lat`/`lon`/`locationAt` then being the last known position), and per alert whether it was raised
+in a remote area. The page shows these as badges and offers them as filters; all of it is decided
+by ProMic (`regionOf` and `linkOf` in `functions/le.js`).
