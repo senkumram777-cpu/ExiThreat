@@ -71,6 +71,45 @@ const TYPE_LABELS: Record<string, string> = {
 
 const hasPoint = (p: { lat: number; lon: number }) => !(p.lat === 0 && p.lon === 0);
 const formatPhone = (phone: string) => (phone ? `+${phone}` : 'No number');
+
+// What ProMic's leCheckInStatus returns: the latest "are you OK?" put to a streaming user, and
+// what that user's phone has done with it.
+interface CheckInStatus {
+  request: { id: string; byName: string; mine: boolean; askedAt: number } | null;
+  state: { id: string; status: string; wrongTries: number; talkback: boolean; loud: boolean } | null;
+  now: number;
+}
+
+const CHECKIN_POLL_MS = 3000;
+// A question the phone has not acknowledged within this long was not delivered.
+const CHECKIN_UNDELIVERED_MS = 20000;
+
+/** The phone's word on the question now showing, or null when it has not said anything about it. */
+const checkInAnswer = (c: CheckInStatus | null) =>
+  c?.request && c.state && c.state.id === c.request.id ? c.state : null;
+
+const checkInWrongTries = (c: CheckInStatus | null) => checkInAnswer(c)?.wrongTries ?? 0;
+
+function checkInWaiting(c: CheckInStatus | null): boolean {
+  if (!c?.request) return false;
+  const answer = checkInAnswer(c);
+  return answer ? answer.status === 'asked' : c.now - c.request.askedAt <= CHECKIN_UNDELIVERED_MS;
+}
+
+function checkInText(c: CheckInStatus | null, name: string): string {
+  if (!c?.request) return `${name}'s phone shows the question silently. They answer with their passcode.`;
+  const who = c.request.mine ? 'You' : c.request.byName || 'Another listener';
+  const answer = checkInAnswer(c);
+  if (!answer) {
+    return c.now - c.request.askedAt > CHECKIN_UNDELIVERED_MS
+      ? `${name}'s phone has not received the question. It may be offline.`
+      : `${who} asked. Sending to ${name}'s phone…`;
+  }
+  if (answer.status === 'safe') return `${name} answered: I'm safe (passcode confirmed).`;
+  if (answer.status === 'help') return `${name} asked for help (passcode confirmed). SOS has started.`;
+  if (answer.status === 'unanswered') return `${who} asked. ${name} did not answer within 15 seconds.`;
+  return `${who} asked. ${name} has 15 seconds to answer with their passcode.`;
+}
 const formatPoint = (p: { lat: number; lon: number }) =>
   hasPoint(p) ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}` : 'Location unknown';
 const formatWhen = (ms: number) =>
@@ -102,6 +141,10 @@ export default function AreaDashboard({
   const [openHost, setOpenHost] = useState<string | null>(null);
   const [flashHost, setFlashHost] = useState<string | null>(null);
   const [listening, setListening] = useState<{ hostId: string; state: LiveState } | null>(null);
+  const [checkIn, setCheckIn] = useState<CheckInStatus | null>(null);
+  const [checkInError, setCheckInError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [talking, setTalking] = useState(false);
 
   const mapElement = useRef<HTMLDivElement | null>(null);
   const map = useRef<LeafletMap | null>(null);
@@ -113,6 +156,7 @@ export default function AreaDashboard({
   const liveRows = useRef<Record<string, HTMLDivElement | null>>({});
   const player = useRef<LivePlayer | null>(null);
   const scopeRef = useRef<Scope>('radius');
+  const talkLogged = useRef(false);
 
   const call = useCallback(
     async (path: string, body: unknown) => {
@@ -205,6 +249,65 @@ export default function AreaDashboard({
       tell(true);
     };
   }, [listeningHostId, call]);
+
+  // "Are you OK?" and talk-back for the stream being listened to. The page cannot read ProMic's
+  // database, so every few seconds it asks ProMic how the latest question stands.
+  const pollCheckIn = useCallback(
+    async (hostId: string) => {
+      try {
+        setCheckIn(await call('leCheckInStatus', { hostId }));
+      } catch {
+        // Not joined yet, or a dropped request: the next poll tries again.
+      }
+    },
+    [call],
+  );
+
+  useEffect(() => {
+    setCheckIn(null);
+    setCheckInError(null);
+    setTalking(false);
+    talkLogged.current = false;
+    if (!listeningHostId) return;
+    pollCheckIn(listeningHostId);
+    const timer = setInterval(() => pollCheckIn(listeningHostId), CHECKIN_POLL_MS);
+    return () => clearInterval(timer);
+  }, [listeningHostId, pollCheckIn]);
+
+  async function askCheckIn(hostId: string) {
+    setCheckInError(null);
+    setAsking(true);
+    try {
+      await call('leCheckIn', { hostId });
+      await pollCheckIn(hostId);
+    } catch (err) {
+      setCheckInError((err as Error).message);
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  async function startTalking(hostId: string) {
+    if (!player.current) return;
+    setCheckInError(null);
+    setTalking(true);
+    try {
+      await player.current.startTalking();
+      // Recorded once per stream listened to, in ProMic's activity log.
+      if (!talkLogged.current) {
+        talkLogged.current = true;
+        call('leCheckInStatus', { hostId, talked: true }).catch(() => undefined);
+      }
+    } catch {
+      setTalking(false);
+      setCheckInError('The microphone could not be used. Allow it for this site and try again.');
+    }
+  }
+
+  function stopTalking() {
+    player.current?.stopTalking();
+    setTalking(false);
+  }
 
   // Redraw the station and the alert / live positions whenever fresh data arrives.
   useEffect(() => {
@@ -472,6 +575,46 @@ export default function AreaDashboard({
                         </button>
                         {active && listening && <span className={mutedClass}>{listeningLabel[listening.state]}</span>}
                       </div>
+                      {active && listening && listening.state !== 'ended' && (
+                        <div className="mt-3 pt-3 border-t border-gray-800 flex flex-col gap-2">
+                          <button
+                            onClick={() => askCheckIn(stream.hostId)}
+                            disabled={asking || checkInWaiting(checkIn)}
+                            className="self-start px-4 py-2 rounded-lg font-mono font-bold text-xs bg-accent-teal text-navy-900 disabled:opacity-50"
+                          >
+                            {checkInWaiting(checkIn) ? 'Waiting For An Answer…' : 'Are You OK?'}
+                          </button>
+                          <p className={mutedClass}>{checkInText(checkIn, stream.name)}</p>
+                          {checkInWrongTries(checkIn) > 0 && (
+                            <p className="font-mono text-xs text-orange-400">
+                              A wrong passcode was entered on {stream.name}&apos;s phone
+                              {checkInWrongTries(checkIn) > 1 ? ` (${checkInWrongTries(checkIn)} times)` : ''}.
+                            </p>
+                          )}
+                          {checkInError && <p className="font-mono text-xs text-accent-red">{checkInError}</p>}
+                          {checkIn?.state?.talkback && (
+                            <>
+                              <p className="font-mono text-xs text-gray-200">
+                                {checkIn.state.loud
+                                  ? `Your voice is coming out of ${stream.name}'s loudspeaker at full volume.`
+                                  : `You can now speak through ${stream.name}'s phone. It plays quietly at first (earpiece or earphones), and from the loudspeaker if they still have not answered 15 seconds after you start.`}
+                              </p>
+                              <button
+                                onPointerDown={() => startTalking(stream.hostId)}
+                                onPointerUp={stopTalking}
+                                onPointerLeave={stopTalking}
+                                onPointerCancel={stopTalking}
+                                onContextMenu={(event) => event.preventDefault()}
+                                className={`self-start px-5 py-3 rounded-full font-mono font-bold text-xs text-white select-none touch-none ${
+                                  talking ? 'bg-accent-red' : 'bg-blue-700'
+                                }`}
+                              >
+                                {talking ? 'Speaking… Let Go To Stop' : 'Hold To Talk'}
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

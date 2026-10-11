@@ -1,11 +1,15 @@
 /**
- * Plays a ProMic live stream in the browser.
+ * Plays a ProMic live stream in the browser, and lets the officer speak back when ProMic allows it.
  *
  * The Host's phone sends audio through ProMic's relay as binary WebSocket frames (ProMic repo,
  * AudioFrameCodec.kt): a 60-byte header (36 bytes user id, then 8-byte timestamp, latitude and
  * longitude) followed by the audio, which is AES-256-GCM encrypted as IV(12) || ciphertext ||
  * tag(16) (AudioEncryption.kt). Decrypted, it is 16 kHz mono 16-bit little-endian PCM. The relay
  * only ever forwards ciphertext; the key comes from ProMic's leJoinLive endpoint.
+ *
+ * Talk-back is the same frame going the other way, on the same socket and with the same key. The
+ * relay hands a listener's frames to the Host's phone only, and the phone plays them only once a
+ * check-in has gone unanswered (ProMic repo, HostCheckIn.kt), so sending before that does nothing.
  */
 
 export interface LiveTicket {
@@ -18,19 +22,37 @@ export interface LiveTicket {
 export type LiveState = 'connecting' | 'waiting' | 'playing' | 'ended';
 
 const HEADER_BYTES = 60;
+const USER_ID_BYTES = 36;
 const IV_BYTES = 12;
 const SAMPLE_RATE = 16000;
 // Audio is scheduled slightly ahead so small network gaps do not click.
 const LEAD_SECONDS = 0.2;
 // If playback has fallen this far behind the Host, skip ahead: live matters more than complete.
 const MAX_LAG_SECONDS = 2;
+// After the officer stops speaking, the stream stays silent this long: the Host's microphone is
+// still picking up the end of what was just played from their phone.
+const ECHO_GUARD_MS = 1200;
+
+interface Microphone {
+  stream: MediaStream;
+  context: AudioContext;
+  source: MediaStreamAudioSourceNode;
+  node: ScriptProcessorNode;
+}
 
 export class LivePlayer {
   private socket: WebSocket | null = null;
   private context: AudioContext | null = null;
+  private key: CryptoKey | null = null;
+  private userId = '';
   private nextStart = 0;
   private queue: Promise<void> = Promise.resolve();
+  private outgoing: Promise<void> = Promise.resolve();
   private stopped = false;
+  private wantTalk = false;
+  private muted = false;
+  private unmuteTimer: ReturnType<typeof setTimeout> | null = null;
+  private microphone: Microphone | null = null;
 
   constructor(private readonly onState: (state: LiveState) => void) {}
 
@@ -38,7 +60,9 @@ export class LivePlayer {
   async start(ticket: LiveTicket): Promise<void> {
     this.onState('connecting');
     const raw = Uint8Array.from(atob(ticket.key), (c) => c.charCodeAt(0));
-    const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+    const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt', 'encrypt']);
+    this.key = key;
+    this.userId = ticket.userId;
     this.context = new AudioContext();
     await this.context.resume();
 
@@ -70,6 +94,8 @@ export class LivePlayer {
     } catch {
       return; // not for this session's key (for example, the Host restarted the stream)
     }
+    // The officer's own voice would come straight back from the Host's microphone.
+    if (this.muted) return;
     const samples = new Int16Array(pcm, 0, Math.floor(pcm.byteLength / 2));
     if (samples.length === 0) return;
     const buffer = context.createBuffer(1, samples.length, SAMPLE_RATE);
@@ -86,8 +112,95 @@ export class LivePlayer {
     this.onState('playing');
   }
 
+  /**
+   * Hold to talk: sends the officer's microphone to the Host's phone until stopTalking(). Throws
+   * when the browser will not give the microphone.
+   */
+  async startTalking(): Promise<void> {
+    if (this.wantTalk || this.stopped || !this.socket || !this.key) return;
+    this.wantTalk = true;
+    const stream = await navigator.mediaDevices
+      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } })
+      .catch((err) => {
+        this.wantTalk = false;
+        throw err;
+      });
+    // The button may have been let go while the browser was still asking for permission.
+    if (!this.wantTalk || this.stopped) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    const context = new AudioContext();
+    const source = context.createMediaStreamSource(stream);
+    const node = context.createScriptProcessor(4096, 1, 1);
+    const step = context.sampleRate / SAMPLE_RATE;
+    let position = 0;
+    node.onaudioprocess = (event) => {
+      const input = event.inputBuffer.getChannelData(0);
+      // Down to 16 kHz by averaging each run of input samples that makes up one output sample.
+      const out: number[] = [];
+      while (position + step <= input.length) {
+        const from = Math.floor(position);
+        const to = Math.max(from + 1, Math.floor(position + step));
+        let sum = 0;
+        for (let i = from; i < to; i++) sum += input[i];
+        out.push(sum / (to - from));
+        position += step;
+      }
+      position -= input.length;
+      if (position < 0) position = 0;
+      if (out.length > 0) this.send(Int16Array.from(out, (v) => Math.max(-1, Math.min(1, v)) * 32767));
+    };
+    source.connect(node);
+    // A script processor only runs while it leads somewhere; it writes nothing, so this is silent.
+    node.connect(context.destination);
+    this.microphone = { stream, context, source, node };
+    if (this.unmuteTimer) clearTimeout(this.unmuteTimer);
+    this.muted = true;
+  }
+
+  stopTalking(): void {
+    this.wantTalk = false;
+    const microphone = this.microphone;
+    if (!microphone) return;
+    this.microphone = null;
+    microphone.node.onaudioprocess = null;
+    microphone.source.disconnect();
+    microphone.node.disconnect();
+    microphone.stream.getTracks().forEach((track) => track.stop());
+    microphone.context.close().catch(() => undefined);
+    this.unmuteTimer = setTimeout(() => {
+      this.muted = false;
+    }, ECHO_GUARD_MS);
+  }
+
+  /** One talk-back frame, built the way the Host's phone expects (see the header comment). */
+  private send(samples: Int16Array): void {
+    const key = this.key;
+    const socket = this.socket;
+    if (!key || !socket || socket.readyState !== WebSocket.OPEN) return;
+    const pcm = new Uint8Array(samples.byteLength);
+    pcm.set(new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength));
+    // Encrypted one after another so the frames leave in the order they were spoken.
+    this.outgoing = this.outgoing
+      .then(async () => {
+        const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+        const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, pcm));
+        const frame = new Uint8Array(HEADER_BYTES + IV_BYTES + cipher.length);
+        frame.set(new TextEncoder().encode(this.userId.padEnd(USER_ID_BYTES).slice(0, USER_ID_BYTES)), 0);
+        // Timestamp as a big-endian 64-bit integer; latitude and longitude stay zero.
+        new DataView(frame.buffer).setBigInt64(USER_ID_BYTES, BigInt(Date.now()));
+        frame.set(iv, HEADER_BYTES);
+        frame.set(cipher, HEADER_BYTES + IV_BYTES);
+        if (socket.readyState === WebSocket.OPEN) socket.send(frame);
+      })
+      .catch(() => undefined);
+  }
+
   stop(): void {
     this.stopped = true;
+    this.stopTalking();
+    if (this.unmuteTimer) clearTimeout(this.unmuteTimer);
     this.socket?.close();
     this.socket = null;
     this.context?.close().catch(() => undefined);

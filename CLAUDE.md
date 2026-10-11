@@ -78,3 +78,10 @@ mono 16-bit PCM).
 While an officer is listening, `AreaDashboard.tsx` calls ProMic's `leLivePing` every 20 seconds (and
 once with `leaving` on stopping), which is what lets the ProMic user's app show that police are
 listening.
+
+The same row lets the officer ask the user "Are you OK?" (`leCheckIn`) and shows the outcome by
+polling `leCheckInStatus` every 3 seconds. If the user does not answer with their passcode within
+15 seconds, their phone opens talk-back and the page offers "Hold To Talk": `liveAudio.ts` sends
+the microphone as frames in the same layout and with the same key as the stream, on the same
+socket. ProMic's relay passes them to the user's phone only, and the phone decides whether to
+play them (ProMic repo, `HostCheckIn.kt`).
