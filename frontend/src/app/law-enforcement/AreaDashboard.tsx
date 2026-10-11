@@ -54,6 +54,8 @@ interface LiveStream {
   lat: number;
   lon: number;
   since: number;
+  // No Connected User is listening to this stream: police are the only people who can hear it.
+  policeOnly?: boolean;
 }
 
 interface Overview {
@@ -559,6 +561,17 @@ export default function AreaDashboard({
                         <span className="h-2.5 w-2.5 rounded-full bg-green-500 animate-pulse flex-shrink-0" />
                         <span className="font-mono font-bold text-sm text-gray-200">{stream.name}</span>
                         <span className="font-mono text-xs text-gray-400">{formatPhone(stream.phone)}</span>
+                        {stream.policeOnly && (
+                          <span
+                            title="Nobody else is listening to this stream. Police are the only people who can hear it."
+                            className="ml-auto flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-400"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden="true">
+                              <path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3Zm-1 5h2v6h-2V7Zm0 8h2v2h-2v-2Z" />
+                            </svg>
+                            Only police listening
+                          </span>
+                        )}
                       </div>
                       <button onClick={() => showOnMap(stream, stream.name)} className={`${mutedClass} mt-1 text-left`}>
                         {formatPoint(stream)}
