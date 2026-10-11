@@ -34,6 +34,8 @@ const ADMIN_POLL_MS = 20_000;
 interface Session {
   token: string;
   email: string;
+  // The officer's station or unit, as registered by a ProMic admin; missing on older accounts.
+  branch?: string;
   expiresAt: number;
 }
 
@@ -253,7 +255,7 @@ export default function LawEnforcementPage() {
     e.preventDefault();
     run(async () => {
       const data = await callJson('leLogin', { email, password });
-      const next = { token: data.token, email: data.email, expiresAt: data.expiresAt };
+      const next = { token: data.token, email: data.email, branch: data.branch || '', expiresAt: data.expiresAt };
       store(SESSION_KEY, next);
       setSession(next);
       setPassword('');
@@ -627,7 +629,8 @@ export default function LawEnforcementPage() {
 
       {session && (
         <p className="text-center text-xs font-mono text-gray-500 mt-8">
-          Signed in as {session.email}.{' '}
+          Signed in as {session.email}
+          {session.branch ? ` (${session.branch})` : ''}.{' '}
           <button onClick={signOut} className="text-accent-teal">
             Sign out
           </button>
