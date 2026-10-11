@@ -34,6 +34,9 @@ interface Alert {
   ts: number;
   lat: number;
   lon: number;
+  // SOS only: whether it is still going, and when it ended (0 when ProMic has no time for it).
+  active?: boolean;
+  endedAt?: number;
 }
 
 interface AlertGroup {
@@ -63,6 +66,53 @@ interface Overview {
   alerts: AlertGroup[];
   live: LiveStream[];
   radiusKm?: number;
+}
+
+// The filters above each list. They only choose what is shown: the map and the CSV keep everything.
+type AlertFilter = 'all' | 'sosActive' | 'sosEnded' | 'threat';
+type LiveFilter = 'all' | 'policeOnly' | 'withListeners';
+
+const ALERT_FILTERS: { id: AlertFilter; label: string; matches: (alert: Alert) => boolean }[] = [
+  { id: 'all', label: 'All', matches: () => true },
+  { id: 'sosActive', label: 'Active SOS', matches: (alert) => alert.type === 'SOS' && !!alert.active },
+  { id: 'sosEnded', label: 'Ended SOS', matches: (alert) => alert.type === 'SOS' && !alert.active },
+  { id: 'threat', label: 'AI threats', matches: (alert) => alert.type !== 'SOS' },
+];
+
+const LIVE_FILTERS: { id: LiveFilter; label: string; matches: (stream: LiveStream) => boolean }[] = [
+  { id: 'all', label: 'All', matches: () => true },
+  { id: 'policeOnly', label: 'Only police listening', matches: (stream) => !!stream.policeOnly },
+  { id: 'withListeners', label: 'With other listeners', matches: (stream) => !stream.policeOnly },
+];
+
+/** A row of filter buttons, each with how many users it would show. */
+function FilterChips<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { id: T; label: string; count: number }[];
+  value: T;
+  onChange: (next: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2 mt-3">
+      {options.map((option) => (
+        <button
+          key={option.id}
+          onClick={() => onChange(option.id)}
+          aria-pressed={value === option.id}
+          className={`rounded-full px-3 py-1 font-mono text-xs border ${
+            value === option.id
+              ? 'border-accent-teal bg-accent-teal/20 text-accent-teal font-bold'
+              : 'border-gray-700 text-gray-400'
+          }`}
+        >
+          {option.label} ({option.count})
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -143,6 +193,8 @@ export default function AreaDashboard({
   const [openHost, setOpenHost] = useState<string | null>(null);
   const [flashHost, setFlashHost] = useState<string | null>(null);
   const [listening, setListening] = useState<{ hostId: string; state: LiveState } | null>(null);
+  const [alertFilter, setAlertFilter] = useState<AlertFilter>('all');
+  const [liveFilter, setLiveFilter] = useState<LiveFilter>('all');
   const [checkIn, setCheckIn] = useState<CheckInStatus | null>(null);
   const [checkInError, setCheckInError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
@@ -404,9 +456,22 @@ export default function AreaDashboard({
     }
   }
 
+  // What each filter leaves: a user stays while at least one of their alerts matches, and only
+  // the matching alerts are listed under them.
+  const groupsFor = (filter: AlertFilter) => {
+    const matches = ALERT_FILTERS.find((option) => option.id === filter)!.matches;
+    return (overview?.alerts ?? [])
+      .map((group) => ({ ...group, alerts: group.alerts.filter(matches) }))
+      .filter((group) => group.alerts.length > 0);
+  };
+  const streamsFor = (filter: LiveFilter) =>
+    (overview?.live ?? []).filter(LIVE_FILTERS.find((option) => option.id === filter)!.matches);
+  const shownGroups = groupsFor(alertFilter);
+  const shownLive = streamsFor(liveFilter);
+
   function downloadCsv() {
     if (!overview) return;
-    const rows = [['Time', 'Type', 'Title', 'Message', 'User name', 'Phone', 'Latitude', 'Longitude'].join(',')];
+    const rows = [['Time', 'Type', 'Title', 'Message', 'User name', 'Phone', 'Latitude', 'Longitude', 'SOS ended'].join(',')];
     for (const group of overview.alerts) {
       for (const alert of group.alerts) {
         rows.push(
@@ -419,6 +484,7 @@ export default function AreaDashboard({
             group.phone,
             hasPoint(alert) ? alert.lat : '',
             hasPoint(alert) ? alert.lon : '',
+            alert.type !== 'SOS' ? '' : alert.active ? 'active' : alert.endedAt ? new Date(alert.endedAt).toLocaleString() : 'ended',
           ]
             .map(csvCell)
             .join(','),
@@ -486,11 +552,24 @@ export default function AreaDashboard({
                 </button>
               )}
             </div>
+            {overview && overview.alerts.length > 0 && (
+              <FilterChips
+                options={ALERT_FILTERS.map((option) => ({
+                  id: option.id,
+                  label: option.label,
+                  count: groupsFor(option.id).length,
+                }))}
+                value={alertFilter}
+                onChange={setAlertFilter}
+              />
+            )}
             {!overview || overview.alerts.length === 0 ? (
               <p className={`${mutedClass} mt-2`}>No alerts in your area.</p>
+            ) : shownGroups.length === 0 ? (
+              <p className={`${mutedClass} mt-3`}>No alerts match this filter.</p>
             ) : (
               <div className="flex flex-col gap-2 mt-3">
-                {overview.alerts.map((group) => {
+                {shownGroups.map((group) => {
                   const latest = group.alerts[0];
                   const located = group.alerts.find(hasPoint);
                   return (
@@ -505,6 +584,11 @@ export default function AreaDashboard({
                           )}
                           <span className="font-mono font-bold text-sm text-gray-200">{group.name}</span>
                           <span className="font-mono text-xs text-gray-400">{formatPhone(group.phone)}</span>
+                          {group.alerts.some((alert) => alert.active) && (
+                            <span className="rounded-full bg-accent-red px-2 py-0.5 font-mono text-[11px] font-bold text-white animate-pulse">
+                              SOS active now
+                            </span>
+                          )}
                           <span className="ml-auto font-mono text-xs text-accent-red">
                             {group.alerts.length} {group.alerts.length === 1 ? 'alert' : 'alerts'}
                           </span>
@@ -525,6 +609,12 @@ export default function AreaDashboard({
                               <span className="text-gray-200">{formatWhen(alert.ts)}</span> ·{' '}
                               {TYPE_LABELS[alert.type] ?? alert.type}
                               {alert.message ? ` · ${alert.message}` : ''} · {formatPoint(alert)}
+                              {alert.type === 'SOS' &&
+                                (alert.active ? (
+                                  <span className="font-bold text-accent-red"> · active now</span>
+                                ) : (
+                                  <span> · {alert.endedAt ? `ended ${formatWhen(alert.endedAt)}` : 'ended'}</span>
+                                ))}
                             </button>
                           ))}
                         </div>
@@ -541,11 +631,24 @@ export default function AreaDashboard({
             <p className={`${mutedClass} mt-1`}>
               Users who chose to share their live stream with law enforcement. Click one to listen.
             </p>
+            {overview && overview.live.length > 0 && (
+              <FilterChips
+                options={LIVE_FILTERS.map((option) => ({
+                  id: option.id,
+                  label: option.label,
+                  count: streamsFor(option.id).length,
+                }))}
+                value={liveFilter}
+                onChange={setLiveFilter}
+              />
+            )}
             {!overview || overview.live.length === 0 ? (
               <p className={`${mutedClass} mt-2`}>Nobody in your area is sharing a live stream right now.</p>
+            ) : shownLive.length === 0 ? (
+              <p className={`${mutedClass} mt-3`}>No live streams match this filter.</p>
             ) : (
               <div className="flex flex-col gap-2 mt-3">
-                {overview.live.map((stream) => {
+                {shownLive.map((stream) => {
                   const active = listening?.hostId === stream.hostId;
                   return (
                     <div
