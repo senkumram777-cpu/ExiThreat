@@ -1,10 +1,12 @@
 import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { handle } from '../middleware/handle';
 import { generatePaperStrip } from '../services/imageService';
 import { redactContent } from '../services/redactionService';
 import { postAccess, postAccessById, NOT_IN_GROUP } from '../services/accessService';
 import { pickGroupForPost } from '../services/groupService';
+import { LIMITS, readText } from '../services/validation';
 
 const router = Router();
 
@@ -18,11 +20,11 @@ function firstLookOpen(record: { viewedAt: Date; completedAt: Date | null } | nu
 }
 
 // POST /api/posts — create a new post (OC submits complaint)
-router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.userId!;
-  const { content } = req.body as { content?: string };
-  if (!content || content.trim().length < 20) {
-    res.status(400).json({ error: 'content must be at least 20 characters' });
+  const content = readText(req.body?.content, 'content', LIMITS.postMax, LIMITS.postMin);
+  if (!content.ok) {
+    res.status(400).json({ error: content.error });
     return;
   }
 
@@ -36,7 +38,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<v
     return;
   }
 
-  const originalContent = content.trim();
+  const originalContent = content.text;
   const redactedContent = redactContent(originalContent);
 
   const post = await prisma.post.create({
@@ -56,10 +58,10 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<v
   });
 
   res.status(201).json(post);
-});
+}));
 
 // GET /api/posts/:id/strip — serves the PNG paper strip (unredacted, first-look only)
-router.get('/:id/strip', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
 
@@ -103,10 +105,10 @@ router.get('/:id/strip', requireAuth, async (req: AuthRequest, res: Response): P
     console.error('First-look strip failed:', err);
     if (!res.headersSent) res.status(500).json({ error: 'Could not prepare the first look' });
   }
-});
+}));
 
 // POST /api/posts/:id/strip/done — the reader closed the first look; it is now used up
-router.post('/:id/strip/done', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/strip/done', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
 
@@ -128,12 +130,12 @@ router.post('/:id/strip/done', requireAuth, async (req: AuthRequest, res: Respon
   }
 
   res.json({ ok: true });
-});
+}));
 
 // GET /api/posts/:id — fetch post metadata + redacted content.
 // Only for members of the post's current group and its author. Who wrote it is never sent:
 // the caller is told only whether it is their own.
-router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
   const post = await prisma.post.findUnique({
@@ -171,10 +173,10 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise
 
   const { ocUserId: _author, ...rest } = post;
   res.json({ ...rest, isAuthor: access.isAuthor, isMember: access.isMember, firstLook });
-});
+}));
 
 // GET /api/posts/:id/comments — fetch all tagged comments (travel with post)
-router.get('/:id/comments', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const access = await postAccessById(id, req.userId!);
   if (!access) {
@@ -191,15 +193,15 @@ router.get('/:id/comments', requireAuth, async (req: AuthRequest, res: Response)
     orderBy: { createdAt: 'asc' },
   });
   res.json(comments);
-});
+}));
 
 // POST /api/posts/:id/comments — add a tagged comment (travels with post)
-router.post('/:id/comments', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
-  const { content } = req.body as { content?: string };
-  if (!content || content.trim().length === 0) {
-    res.status(400).json({ error: 'content required' });
+  const content = readText(req.body?.content, 'content', LIMITS.commentMax);
+  if (!content.ok) {
+    res.status(400).json({ error: content.error });
     return;
   }
 
@@ -217,10 +219,10 @@ router.post('/:id/comments', requireAuth, async (req: AuthRequest, res: Response
   }
 
   const comment = await prisma.comment.create({
-    data: { postId: id, userId, content: content.trim() },
+    data: { postId: id, userId, content: content.text },
     include: { user: { select: { id: true, username: true } } },
   });
   res.status(201).json(comment);
-});
+}));
 
 export default router;

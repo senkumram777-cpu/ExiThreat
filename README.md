@@ -28,8 +28,12 @@ alerts and live streams.
 
 ## How ExiThreat works
 
-1. **Account.** Register with a username and password; no email or phone is asked for.
-   Passwords are hashed with bcrypt, and sign-in returns a token valid for 7 days.
+1. **Account.** Register with a username (3 to 30 letters, digits, dots, dashes or
+   underscores) and a password of 8 to 72 characters; no email or phone is asked for, so there
+   is no password reset. Passwords are hashed with bcrypt, and sign-in returns a token valid
+   for 7 days. The Account page signs out, signs out on all devices, and changes the password
+   (which also signs every other device out). Ten wrong passwords for one account from one
+   network address block further tries for 15 minutes.
 2. **Groups.** Nobody chooses or creates a group. The server places each user in one group at
    random (emptier groups are more likely), at sign-up, or at the next sign-in for older
    accounts. A group holds at most 25 members; new groups are opened as needed and get a
@@ -66,7 +70,7 @@ alerts and live streams.
 | Route | Purpose |
 |---|---|
 | `/` | Home |
-| `/auth/register`, `/auth/login` | Account |
+| `/auth/register`, `/auth/login`, `/account` | Sign up, sign in; sign out and change password |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
 | `/post/new`, `/post/[id]` | Write a disclosure; view one, vote and comment |
 | `/promic` | A ProMic user's own backups |
@@ -78,7 +82,7 @@ All routes are under `/api` and, except register and login, need `Authorization:
 
 | Route | Purpose |
 |---|---|
-| `POST /auth/register`, `POST /auth/login` | Account |
+| `POST /auth/register`, `POST /auth/login`, `POST /auth/password`, `POST /auth/signout-all` | Account |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
@@ -184,7 +188,7 @@ Backend (`backend/.env`, not in git):
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Signs sign-in tokens; use a long random value |
+| `JWT_SECRET` | Signs sign-in tokens. Required: the server does not start without it, and when hosted it refuses the example value or one under 32 characters |
 | `FRONTEND_ORIGIN` | The website's address, for CORS |
 | `PORT` | Defaults to 4000 |
 | `TRUST_PROXY` | Set to `1` behind a hosting proxy so rate limits apply per visitor |
@@ -241,17 +245,28 @@ These public servers are meant for light use.
   `REGISTER_LIMIT_PER_DAY`.
 - The strip is drawn with fonts installed in the backend's image (`backend/Dockerfile`):
   DejaVu for Latin text, Noto for Tamil and Devanagari. Other scripts need their font added.
-- Sign-in tokens are kept in the browser's local storage. The officer's session is kept in
-  session storage and ends when the tab is closed.
+- Sign-in tokens are kept in the browser's local storage, where a script injected into the
+  page could read them. A cookie the page cannot read is not possible while the website and
+  the API are on different `fly.dev` addresses; it needs both on one domain. The officer's
+  session is kept in session storage and ends when the tab is closed.
+- Every request checks that the account still exists and that the token is not older than
+  the last password change or "sign out on all devices" (`User.tokensValidFrom`).
+- Post, comment, chat, username and password sizes are checked on the server
+  (`backend/src/services/validation.ts`), and a request body may be 100 kB at most.
+- Route errors are caught (`backend/src/middleware/handle.ts`) and answered as JSON without
+  details; the details go to the server log.
 - The ProMic service-account key gives the backend wide access to ProMic's data. Keep it out of
   the repository and limit who can read the hosting secrets.
-- `helmet`, CORS limited to `FRONTEND_ORIGIN`, and rate limiting are enabled on the API.
+- `helmet`, CORS limited to `FRONTEND_ORIGIN`, and rate limiting are enabled on the API:
+  1,500 requests per address in 15 minutes overall, with lower limits on sign-up and sign-in.
+  The counts are kept in memory, so they assume a single backend machine.
 
 ## Known limitations
 
 - The group trust score formula exists (`weightageService.ts`) but nothing calls it yet, so
   scores stay at 0.
 - There is no admin role in ExiThreat, and no way to leave or change group.
+- A forgotten password cannot be recovered, and an account cannot be deleted by its owner.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
   15 accounts before a post can also move on.
 - Redaction is pattern-based and tuned to English and US formats, so it will miss some names

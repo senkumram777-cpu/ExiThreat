@@ -1,15 +1,17 @@
 import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { handle } from '../middleware/handle';
 import { recalculateGroupTrustScore } from '../services/weightageService';
 import { isGroupMember } from '../services/accessService';
 import { ensureGroup, touchMember } from '../services/groupService';
+import { LIMITS, readText } from '../services/validation';
 
 const router = Router();
 
 // GET /api/groups — the caller's own groups (summary). Other groups are not listed, and
 // nobody joins or creates one: the server assigns it (services/groupService.ts).
-router.get('/', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.userId!;
   await ensureGroup(userId);
   const groups = await prisma.group.findMany({
@@ -24,10 +26,10 @@ router.get('/', requireAuth, async (req: AuthRequest, res: Response): Promise<vo
     orderBy: { createdAt: 'desc' },
   });
   res.json(groups);
-});
+}));
 
 // GET /api/groups/:id — group detail with member names and current posts. Members only.
-router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const summary = await prisma.group.findUnique({
     where: { id },
@@ -72,13 +74,13 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise
     members: members.map((m) => ({ username: m.user.username })),
     currentPosts,
   });
-});
+}));
 
 // POST /api/groups/:id/heartbeat — update activeness metrics
-router.post('/:id/heartbeat', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/heartbeat', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
-  const { secondsSpent = 0 } = req.body as { secondsSpent?: number };
+  const secondsSpent = (req.body as { secondsSpent?: unknown } | undefined)?.secondsSpent;
 
   const member = await prisma.groupMember.findUnique({
     where: { groupId_userId: { groupId: id, userId } },
@@ -102,10 +104,10 @@ router.post('/:id/heartbeat', requireAuth, async (req: AuthRequest, res: Respons
   recalculateGroupTrustScore(id).catch(console.error);
 
   res.json({ ok: true });
-});
+}));
 
 // GET /api/groups/:id/chat — fetch group-local chat messages
-router.get('/:id/chat', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   if (!(await isGroupMember(id, req.userId!))) {
     res.status(403).json({ error: 'Not a member of this group' });
@@ -119,15 +121,15 @@ router.get('/:id/chat', requireAuth, async (req: AuthRequest, res: Response): Pr
     take: limit,
   });
   res.json(messages.reverse());
-});
+}));
 
 // POST /api/groups/:id/chat — post a chat message (stays local)
-router.post('/:id/chat', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
-  const { content } = req.body as { content?: string };
-  if (!content || content.trim().length === 0) {
-    res.status(400).json({ error: 'content required' });
+  const content = readText(req.body?.content, 'content', LIMITS.chatMax);
+  if (!content.ok) {
+    res.status(400).json({ error: content.error });
     return;
   }
   const member = await prisma.groupMember.findUnique({
@@ -138,10 +140,10 @@ router.post('/:id/chat', requireAuth, async (req: AuthRequest, res: Response): P
     return;
   }
   const message = await prisma.chatMessage.create({
-    data: { groupId: id, userId, content: content.trim() },
+    data: { groupId: id, userId, content: content.text },
     include: { user: { select: { id: true, username: true } } },
   });
   res.status(201).json(message);
-});
+}));
 
 export default router;

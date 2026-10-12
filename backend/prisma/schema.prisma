@@ -12,6 +12,9 @@ model User {
   username     String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
+  // Sign-in tokens issued before this moment are refused: set by a password change and by
+  // "sign out everywhere" (see middleware/auth.ts).
+  tokensValidFrom DateTime?
 
   groupMemberships GroupMember[]
   posts            Post[]        @relation("OCPosts")

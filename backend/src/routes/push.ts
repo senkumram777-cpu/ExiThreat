@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { handle } from '../middleware/handle';
 import { postAccess, NOT_IN_GROUP } from '../services/accessService';
 import { movePost, pickGroupForPost, touchMember, voteTally } from '../services/groupService';
 
@@ -9,7 +10,7 @@ const router = Router();
 const MANUAL_PUSH_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // POST /api/push/:postId/vote — member votes to push content
-router.post('/:postId/vote', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:postId/vote', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { postId } = req.params;
   const userId = req.userId!;
 
@@ -54,10 +55,10 @@ router.post('/:postId/vote', requireAuth, async (req: AuthRequest, res: Response
   await touchMember(post.currentGroupId, userId);
 
   res.json({ hasVoted: true, hasRead: true, ...(await voteTally(post)) });
-});
+}));
 
 // DELETE /api/push/:postId/vote — retract a vote
-router.delete('/:postId/vote', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.delete('/:postId/vote', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { postId } = req.params;
   const userId = req.userId!;
 
@@ -72,10 +73,10 @@ router.delete('/:postId/vote', requireAuth, async (req: AuthRequest, res: Respon
   });
 
   res.json({ voted: false });
-});
+}));
 
 // POST /api/push/:postId/manual — OC manual push (once per 24h, 0 weightage)
-router.post('/:postId/manual', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:postId/manual', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { postId } = req.params;
   const userId = req.userId!;
 
@@ -125,10 +126,10 @@ router.post('/:postId/manual', requireAuth, async (req: AuthRequest, res: Respon
     newGroupId,
     message: 'Post manually pushed to a new group. Current group\'s votes have been cleared.',
   });
-});
+}));
 
 // GET /api/push/:postId/status — current vote status for the calling user's group
-router.get('/:postId/status', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:postId/status', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { postId } = req.params;
   const userId = req.userId!;
 
@@ -154,6 +155,6 @@ router.get('/:postId/status', requireAuth, async (req: AuthRequest, res: Respons
   ]);
 
   res.json({ hasVoted: !!userVote, hasRead: !!view, ...tally });
-});
+}));
 
 export default router;

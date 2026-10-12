@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -29,15 +29,20 @@ app.use(cors({
 }));
 
 // ── Body parsing + compression ─────────────────────────────────────────────
-app.use(express.json({ limit: '1mb' }));
+// The largest thing a user sends is a 5,000-character post.
+app.use(express.json({ limit: '100kb' }));
 app.use(compression());
 
 // ── Global rate limiting ───────────────────────────────────────────────────
+// Room for normal use: one open group page polls its chat 180 times in 15 minutes, a post
+// page its votes 60 times, and several people may share one office address. Sign-up and
+// sign-in have their own, much lower limits (routes/auth.ts).
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300,
+  max: 1500,
   standardHeaders: true,
   legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a few minutes and try again.' },
 }));
 
 // ── Routes ─────────────────────────────────────────────────────────────────
@@ -49,6 +54,36 @@ app.use('/api/weightage', weightageRouter);
 app.use('/api/promic', promicRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// ── Errors ─────────────────────────────────────────────────────────────────
+// Everything a route throws ends up here (see middleware/handle.ts). The details go to the
+// log; the caller gets a plain message, always as JSON.
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  const type = (err as { type?: string } | null)?.type;
+  if (type === 'entity.too.large') {
+    res.status(413).json({ error: 'Request too large' });
+    return;
+  }
+  if (type === 'entity.parse.failed') {
+    res.status(400).json({ error: 'Malformed request' });
+    return;
+  }
+  console.error('Request failed:', err);
+  res.status(500).json({ error: 'Something went wrong. Please try again.' });
+});
+
+// A failure outside a request (the push observer catches its own) is logged, not fatal.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
 
 // ── Start ──────────────────────────────────────────────────────────────────
 async function main() {

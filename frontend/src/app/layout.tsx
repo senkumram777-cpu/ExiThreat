@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import NavLinks from '@/components/NavLinks';
 
 export const metadata: Metadata = {
   title: 'ExiThreat',
@@ -31,11 +32,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <a href="/" className="text-accent-red font-mono font-bold text-lg tracking-tight no-underline hover:no-underline">
               ExiThreat
             </a>
-            <div className="flex gap-4 text-sm font-mono text-gray-400">
-              <a href="/groups" className="hover:text-accent-teal transition-colors">Groups</a>
-              <a href="/promic" className="hover:text-accent-teal transition-colors">Backups</a>
-              <a href="/post/new" className="text-accent-red hover:text-accent-red/80 transition-colors">+ Disclose</a>
-            </div>
+            <NavLinks />
           </div>
         </nav>
 

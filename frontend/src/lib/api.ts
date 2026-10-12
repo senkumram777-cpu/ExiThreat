@@ -3,6 +3,8 @@
  * Auth token is read from localStorage and attached to every request.
  */
 
+import { clearSession } from './session';
+
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -146,13 +148,28 @@ async function req<T>(
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
-  if (binary) {
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.blob() as unknown as T;
+  if (binary && res.ok) return res.blob() as unknown as T;
+
+  // Errors are JSON with an `error` message, but a proxy in between may answer in plain text.
+  let data: { error?: string } | null = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
   }
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+  // The session has run out, the password was changed elsewhere, or the account is gone:
+  // forget it and ask the user to sign in again. A wrong password at sign-in is also a 401,
+  // and stays on the sign-in page.
+  if (res.status === 401 && token && !path.startsWith('/auth/login')) {
+    clearSession();
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/')) {
+      window.location.assign('/auth/login?expired=1');
+    }
+    throw new Error('You have been signed out. Please sign in again.');
+  }
+
+  if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
   return data as T;
 }
 
@@ -163,6 +180,11 @@ export const auth = {
     req<AuthResponse>('POST', '/auth/register', { username, password }),
   login: (username: string, password: string) =>
     req<AuthResponse>('POST', '/auth/login', { username, password }),
+  /** Returns a new token; tokens on every other device stop working. */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    req<AuthResponse>('POST', '/auth/password', { currentPassword, newPassword }),
+  /** Every token issued so far stops working, including this device's. */
+  signOutAll: () => req<{ ok: boolean }>('POST', '/auth/signout-all'),
 };
 
 // ── Posts ─────────────────────────────────────────────────────────────────
