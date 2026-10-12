@@ -4,6 +4,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { generatePaperStrip } from '../services/imageService';
 import { redactContent } from '../services/redactionService';
 import { postAccess, postAccessById, NOT_IN_GROUP } from '../services/accessService';
+import { pickGroupForPost } from '../services/groupService';
 
 const router = Router();
 
@@ -25,15 +26,15 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<v
     return;
   }
 
-  // Assign to a random group
-  const groupCount = await prisma.group.count();
-  if (groupCount === 0) {
-    res.status(503).json({ error: 'No groups available. An admin must create groups first.' });
+  // Assign to a random group that has enough members and that the author is not in
+  const groupId = await pickGroupForPost(userId);
+  if (!groupId) {
+    res.status(503).json({
+      error: 'There are not yet enough members in other groups to review a disclosure safely. '
+        + 'Nothing was saved. Please try again later.',
+    });
     return;
   }
-  const randomGroup = await prisma.group.findFirst({
-    skip: Math.floor(Math.random() * groupCount),
-  });
 
   const originalContent = content.trim();
   const redactedContent = redactContent(originalContent);
@@ -43,7 +44,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<v
       originalContent,
       redactedContent,
       ocUserId: userId,
-      currentGroupId: randomGroup!.id,
+      currentGroupId: groupId,
     },
     select: {
       id: true,

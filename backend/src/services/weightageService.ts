@@ -4,8 +4,9 @@
  * The "Current Weightage" of a post is the sum of push percentages from
  * every group it has successfully traversed (stored in PostHistory).
  *
- * Manual OC pushes record wasManualPush=true and carry 0 weightage,
- * so they are naturally excluded from SUM aggregations.
+ * Manual OC pushes record wasManualPush=true and carry 0 weightage. A group counts once:
+ * if a post comes back to a group it has already been through, only the first vote counts,
+ * so a post cannot gain weight by going round the same groups.
  */
 
 import { prisma } from '../index';
@@ -23,6 +24,18 @@ export interface WeightageResult {
   }>;
 }
 
+/** The weight of a post, from its history in the order it happened. */
+function weightOf(history: Array<{ groupId: string; pushPercentage: number; wasManualPush: boolean }>): number {
+  const counted = new Set<string>();
+  let total = 0;
+  for (const h of history) {
+    if (h.wasManualPush || counted.has(h.groupId)) continue;
+    counted.add(h.groupId);
+    total += Math.min(h.pushPercentage, 100);
+  }
+  return total;
+}
+
 export async function getPostWeightage(postId: string): Promise<WeightageResult | null> {
   const history = await prisma.postHistory.findMany({
     where: { postId },
@@ -35,10 +48,7 @@ export async function getPostWeightage(postId: string): Promise<WeightageResult 
     if (!exists) return null;
   }
 
-  const aggregatedWeight = history.reduce(
-    (sum, h) => sum + (h.wasManualPush ? 0 : h.pushPercentage),
-    0,
-  );
+  const aggregatedWeight = weightOf(history);
 
   return {
     postId,
@@ -56,14 +66,15 @@ export async function getPostWeightage(postId: string): Promise<WeightageResult 
 
 /**
  * Recomputes and persists Post.totalWeight from PostHistory.
- * Call after any manual correction.
+ * Called after every move.
  */
 export async function recalculateTotalWeight(postId: string): Promise<number> {
-  const result = await prisma.postHistory.aggregate({
-    where: { postId, wasManualPush: false },
-    _sum: { pushPercentage: true },
+  const history = await prisma.postHistory.findMany({
+    where: { postId },
+    orderBy: { movedAt: 'asc' },
+    select: { groupId: true, pushPercentage: true, wasManualPush: true },
   });
-  const total = result._sum.pushPercentage ?? 0;
+  const total = weightOf(history);
   await prisma.post.update({ where: { id: postId }, data: { totalWeight: total } });
   return total;
 }

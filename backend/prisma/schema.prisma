@@ -40,6 +40,7 @@ model GroupMember {
   groupId        String
   userId         String
   joinedAt       DateTime @default(now())
+  lastSeenAt     DateTime? // last time the member used the group; decides who counts in a vote
   visitCount     Int      @default(0)
   totalTimeSpent Int      @default(0) // seconds
   readThroughCount Int    @default(0)

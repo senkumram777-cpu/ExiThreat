@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { postAccess, NOT_IN_GROUP } from '../services/accessService';
+import { movePost, pickGroupForPost, touchMember, voteTally } from '../services/groupService';
 
 const router = Router();
 
@@ -33,6 +34,16 @@ router.post('/:postId/vote', requireAuth, async (req: AuthRequest, res: Response
     return;
   }
 
+  // Only someone who has opened the post's first look can vote on it
+  const view = await prisma.viewRecord.findUnique({
+    where: { postId_userId: { postId, userId } },
+    select: { id: true },
+  });
+  if (!view) {
+    res.status(403).json({ error: 'Read the first look before voting' });
+    return;
+  }
+
   // Upsert vote (idempotent)
   await prisma.pushVote.upsert({
     where: { postId_groupId_userId: { postId, groupId: post.currentGroupId, userId } },
@@ -40,19 +51,9 @@ router.post('/:postId/vote', requireAuth, async (req: AuthRequest, res: Response
     update: {},
   });
 
-  // Return current vote count vs total members
-  const [voteCount, totalMembers] = await Promise.all([
-    prisma.pushVote.count({ where: { postId, groupId: post.currentGroupId } }),
-    prisma.groupMember.count({ where: { groupId: post.currentGroupId } }),
-  ]);
+  await touchMember(post.currentGroupId, userId);
 
-  res.json({
-    voted: true,
-    voteCount,
-    totalMembers,
-    pushPercentage: totalMembers > 0 ? (voteCount / totalMembers) * 100 : 0,
-    thresholdReached: totalMembers > 0 && voteCount / totalMembers >= 0.5,
-  });
+  res.json({ hasVoted: true, hasRead: true, ...(await voteTally(post)) });
 });
 
 // DELETE /api/push/:postId/vote — retract a vote
@@ -106,41 +107,22 @@ router.post('/:postId/manual', requireAuth, async (req: AuthRequest, res: Respon
 
   // Select a random new group
   const currentGroupId = post.currentGroupId;
-  const groupCount = await prisma.group.count({ where: { id: { not: currentGroupId } } });
-  if (groupCount === 0) {
-    res.status(503).json({ error: 'No other groups available' });
+  const newGroupId = await pickGroupForPost(userId, post);
+  if (!newGroupId) {
+    res.status(503).json({ error: 'No other group with enough members is available yet' });
     return;
   }
-  const newGroup = await prisma.group.findFirst({
-    where: { id: { not: currentGroupId } },
-    skip: Math.floor(Math.random() * groupCount),
-  });
 
-  // Record history with wasManualPush=true and pushPercentage=0
-  await prisma.$transaction([
-    prisma.postHistory.create({
-      data: {
-        postId,
-        groupId: currentGroupId,
-        pushPercentage: 0,
-        wasManualPush: true,
-      },
-    }),
-    // Invalidate all current group votes (collision logic: group loses push privilege)
-    prisma.pushVote.deleteMany({ where: { postId, groupId: currentGroupId } }),
-    prisma.post.update({
-      where: { id: postId },
-      data: {
-        currentGroupId: newGroup!.id,
-        lastManualPushAt: new Date(),
-        // totalWeight unchanged — manual push carries 0 weightage
-      },
-    }),
-  ]);
+  // Recorded with wasManualPush=true and pushPercentage=0: it adds nothing to the weight, and
+  // the current group's votes are cleared (collision logic: group loses push privilege).
+  if (!(await movePost(postId, currentGroupId, newGroupId, 0, true))) {
+    res.status(409).json({ error: 'The post has just moved to another group' });
+    return;
+  }
 
   res.json({
     moved: true,
-    newGroupId: newGroup!.id,
+    newGroupId,
     message: 'Post manually pushed to a new group. Current group\'s votes have been cleared.',
   });
 });
@@ -160,21 +142,18 @@ router.get('/:postId/status', requireAuth, async (req: AuthRequest, res: Respons
     return;
   }
 
-  const [userVote, voteCount, totalMembers] = await Promise.all([
+  const [userVote, view, tally] = await Promise.all([
     prisma.pushVote.findUnique({
       where: { postId_groupId_userId: { postId, groupId: post.currentGroupId, userId } },
     }),
-    prisma.pushVote.count({ where: { postId, groupId: post.currentGroupId } }),
-    prisma.groupMember.count({ where: { groupId: post.currentGroupId } }),
+    prisma.viewRecord.findUnique({
+      where: { postId_userId: { postId, userId } },
+      select: { id: true },
+    }),
+    voteTally(post),
   ]);
 
-  res.json({
-    hasVoted: !!userVote,
-    voteCount,
-    totalMembers,
-    pushPercentage: totalMembers > 0 ? (voteCount / totalMembers) * 100 : 0,
-    thresholdReached: totalMembers > 0 && voteCount / totalMembers >= 0.5,
-  });
+  res.json({ hasVoted: !!userVote, hasRead: !!view, ...tally });
 });
 
 export default router;

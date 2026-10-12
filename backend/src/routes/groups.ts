@@ -3,12 +3,17 @@ import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { recalculateGroupTrustScore } from '../services/weightageService';
 import { isGroupMember } from '../services/accessService';
+import { ensureGroup, touchMember } from '../services/groupService';
 
 const router = Router();
 
-// GET /api/groups — list all groups (summary)
-router.get('/', requireAuth, async (_req: AuthRequest, res: Response): Promise<void> => {
+// GET /api/groups — the caller's own groups (summary). Other groups are not listed, and
+// nobody joins or creates one: the server assigns it (services/groupService.ts).
+router.get('/', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.userId!;
+  await ensureGroup(userId);
   const groups = await prisma.group.findMany({
+    where: { members: { some: { userId } } },
     select: {
       id: true,
       name: true,
@@ -21,8 +26,7 @@ router.get('/', requireAuth, async (_req: AuthRequest, res: Response): Promise<v
   res.json(groups);
 });
 
-// GET /api/groups/:id — group detail. Anyone signed in gets the summary (they need it to
-// decide whether to join); the member names and the current posts are for members only.
+// GET /api/groups/:id — group detail with member names and current posts. Members only.
 router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const summary = await prisma.group.findUnique({
@@ -41,9 +45,10 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise
   }
 
   if (!(await isGroupMember(id, req.userId!))) {
-    res.json({ ...summary, isMember: false, members: [], currentPosts: [] });
+    res.status(403).json({ error: 'Not a member of this group' });
     return;
   }
+  await touchMember(id, req.userId!);
 
   const [members, currentPosts] = await Promise.all([
     prisma.groupMember.findMany({
@@ -69,37 +74,6 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise
   });
 });
 
-// POST /api/groups — create a new group (admin / seeding)
-router.post('/', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { name } = req.body as { name?: string };
-  if (!name || name.trim().length === 0) {
-    res.status(400).json({ error: 'name required' });
-    return;
-  }
-  const group = await prisma.group.create({ data: { name: name.trim() } });
-  res.status(201).json(group);
-});
-
-// POST /api/groups/:id/join — join a group
-router.post('/:id/join', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
-  const userId = req.userId!;
-  const group = await prisma.group.findUnique({ where: { id } });
-  if (!group) {
-    res.status(404).json({ error: 'Group not found' });
-    return;
-  }
-  const existing = await prisma.groupMember.findUnique({
-    where: { groupId_userId: { groupId: id, userId } },
-  });
-  if (existing) {
-    res.status(409).json({ error: 'Already a member' });
-    return;
-  }
-  const member = await prisma.groupMember.create({ data: { groupId: id, userId } });
-  res.status(201).json(member);
-});
-
 // POST /api/groups/:id/heartbeat — update activeness metrics
 router.post('/:id/heartbeat', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
@@ -114,11 +88,13 @@ router.post('/:id/heartbeat', requireAuth, async (req: AuthRequest, res: Respons
     return;
   }
 
+  // `secondsSpent` is the time since the last heartbeat, which comes once a minute.
   await prisma.groupMember.update({
     where: { groupId_userId: { groupId: id, userId } },
     data: {
       visitCount: { increment: 1 },
-      totalTimeSpent: { increment: Math.max(0, Math.floor(secondsSpent)) },
+      totalTimeSpent: { increment: Math.min(120, Math.max(0, Math.floor(Number(secondsSpent) || 0))) },
+      lastSeenAt: new Date(),
     },
   });
 

@@ -30,12 +30,16 @@ alerts and live streams.
 
 1. **Account.** Register with a username and password; no email or phone is asked for.
    Passwords are hashed with bcrypt, and sign-in returns a token valid for 7 days.
-2. **Groups.** Users create or join groups. Each group has its own chat, which never leaves it.
-   Only members can read a group's posts, chat and member names; everyone else sees its name
-   and counts.
+2. **Groups.** Nobody chooses or creates a group. The server places each user in one group at
+   random (emptier groups are more likely), at sign-up, or at the next sign-in for older
+   accounts. A group holds at most 25 members; new groups are opened as needed and get a
+   generated name. A user sees only their own group: its posts, its chat (which never leaves
+   it) and its member names. One network address can create 5 accounts a day.
 3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
    server makes a redacted copy, replacing emails, phone numbers, names, addresses, URLs, dates
-   and ID numbers with labels such as `[NAME REDACTED]`, and places the post in a random group.
+   and ID numbers with labels such as `[NAME REDACTED]`, and places the post in a random group
+   that has at least 5 members and that the author is not in. If there is no such group yet,
+   the post is refused and nothing is saved.
    A post, its comments, votes and weightage can be read only by members of the group it is
    in now and by its author. Nobody is told who the author is; the author's own page says
    "Your Post".
@@ -44,15 +48,17 @@ alerts and live streams.
    reading" or leaves the page; afterwards only the redacted version is available. The server
    keeps the record, so it is the same on every device. A look that was opened but never
    closed (lost connection) can be reopened for 10 minutes.
-5. **Push.** Members of the current group vote to push the post on. The author cannot vote on
-   their own post, and a vote can be withdrawn.
-6. **Move.** Every 10 seconds the server checks the votes. At 50% of a group's members, the post
-   moves to another random group, the vote percentage is saved to its history, and voting starts
-   again.
+5. **Push.** Members of the current group vote to push the post on, once they have opened its
+   first look. The author cannot vote on their own post, and a vote can be withdrawn.
+6. **Move.** Every 10 seconds the server checks the votes. They are measured against the
+   members who used the group in the last 14 days (never against fewer than 5). At 50%, the
+   post moves to another random group of at least 5 members that the author is not in,
+   preferring groups it has not been through; the vote percentage is saved to its history and
+   voting starts again.
 7. **Manual push.** The author may move their own post once every 24 hours. It clears the
    current votes and adds nothing to the post's weight.
-8. **Weightage.** A post's weight is the sum of the vote percentages from every group it left by
-   vote.
+8. **Weightage.** A post's weight is the sum of the vote percentages from the groups it left by
+   vote. Each group counts once, with at most 100, so going round the same groups adds nothing.
 9. **Comments** travel with a post from group to group. Group chat does not.
 
 ### Pages
@@ -73,7 +79,7 @@ All routes are under `/api` and, except register and login, need `Authorization:
 | Route | Purpose |
 |---|---|
 | `POST /auth/register`, `POST /auth/login` | Account |
-| `GET /groups`, `GET /groups/:id`, `POST /groups`, `POST /groups/:id/join`, `POST /groups/:id/heartbeat` | Groups and activity |
+| `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
@@ -226,8 +232,13 @@ These public servers are meant for light use.
 - The unredacted text of a post is never sent as text; it is rendered to an image on the
   server and served once per member. This slows copying down; it cannot stop a screenshot. The
   text is not encrypted in the database.
-- Reading is limited to a group's members, but anyone signed in can still join or create a
-  group, so membership is not yet a real barrier.
+- Reading is limited to a group's members, and membership is assigned at random
+  (`backend/src/services/groupService.ts`). Someone who opens many accounts still ends up in
+  many groups: accounts need no email or phone, and the limit per network address only slows
+  this down.
+- The group sizes can be changed with `GROUP_MIN_MEMBERS` and `GROUP_MAX_MEMBERS` on the
+  backend (`fly secrets set` or `[env]` in `backend/fly.toml`), and the sign-up limit with
+  `REGISTER_LIMIT_PER_DAY`.
 - The strip is drawn with fonts installed in the backend's image (`backend/Dockerfile`):
   DejaVu for Latin text, Noto for Tamil and Devanagari. Other scripts need their font added.
 - Sign-in tokens are kept in the browser's local storage. The officer's session is kept in
@@ -240,7 +251,9 @@ These public servers are meant for light use.
 
 - The group trust score formula exists (`weightageService.ts`) but nothing calls it yet, so
   scores stay at 0.
-- Any signed-in user can create a group; there is no admin role in ExiThreat.
+- There is no admin role in ExiThreat, and no way to leave or change group.
+- Until two groups have 5 members each, nobody can post; with three groups it takes at least
+  15 accounts before a post can also move on.
 - Redaction is pattern-based and tuned to English and US formats, so it will miss some names
   and numbers.
 - The move to the next group runs by polling every 10 seconds.

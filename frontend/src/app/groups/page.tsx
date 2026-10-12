@@ -8,8 +8,6 @@ export default function GroupsPage() {
   const [groupList, setGroupList] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     groupsApi
@@ -19,47 +17,21 @@ export default function GroupsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newGroupName.trim() || creating) return;
-    setCreating(true);
-    try {
-      const g = await groupsApi.create(newGroupName.trim());
-      setGroupList((prev) => [g, ...prev]);
-      setNewGroupName('');
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setCreating(false);
-    }
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-mono font-bold text-accent-teal">Processing Groups</h1>
+        <h1 className="text-xl font-mono font-bold text-accent-teal">
+          {groupList.length > 1 ? 'Your Groups' : 'Your Group'}
+        </h1>
         <Link href="/post/new" className="text-sm font-mono text-accent-red hover:underline">
           + New Disclosure
         </Link>
       </div>
 
-      {/* Create group form */}
-      <form onSubmit={handleCreate} className="flex gap-2">
-        <input
-          type="text"
-          value={newGroupName}
-          onChange={(e) => setNewGroupName(e.target.value)}
-          placeholder="New group name…"
-          className="flex-1 bg-navy-800 border border-gray-700 rounded-lg px-3 py-2 text-sm font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal"
-        />
-        <button
-          type="submit"
-          disabled={creating || !newGroupName.trim()}
-          className="px-4 py-2 bg-navy-700 border border-gray-600 text-gray-300 rounded-lg font-mono text-sm disabled:opacity-40 hover:border-accent-teal transition-colors"
-        >
-          {creating ? '…' : 'Create'}
-        </button>
-      </form>
+      <p className="text-xs font-mono text-gray-500 leading-relaxed">
+        Groups are assigned at random, so nobody can choose which disclosures they read. Your
+        own disclosures are never sent to your group.
+      </p>
 
       {error && <div className="text-accent-red text-xs font-mono">{error}</div>}
 
@@ -73,7 +45,7 @@ export default function GroupsPage() {
 
       {!loading && groupList.length === 0 && (
         <div className="text-center py-12 text-gray-600 font-mono text-sm">
-          No groups yet. Create one above.
+          You have not been placed in a group yet. Reload the page in a moment.
         </div>
       )}
 

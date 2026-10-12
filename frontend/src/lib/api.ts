@@ -44,7 +44,7 @@ export interface Group {
   _count: { members: number; currentPosts: number };
 }
 
-/** `members` and `currentPosts` are empty unless the signed-in user is a member. */
+/** Only sent to members of the group. */
 export interface GroupDetail extends Group {
   isMember: boolean;
   members: Array<{ username: string }>;
@@ -59,7 +59,10 @@ export interface GroupDetail extends Group {
 
 export interface PushStatus {
   hasVoted: boolean;
+  /** Whether the signed-in user has opened the first look; they cannot vote before that. */
+  hasRead: boolean;
   voteCount: number;
+  /** What the votes are measured against: recently active members, never fewer than the minimum. */
   totalMembers: number;
   pushPercentage: number;
   thresholdReached: boolean;
@@ -187,10 +190,9 @@ export const posts = {
 // ── Groups ────────────────────────────────────────────────────────────────
 
 export const groups = {
+  /** The signed-in user's own groups. The server assigns them; nobody joins or creates one. */
   list: () => req<Group[]>('GET', '/groups'),
   get: (id: string) => req<GroupDetail>('GET', `/groups/${id}`),
-  create: (name: string) => req<Group>('POST', '/groups', { name }),
-  join: (id: string) => req<unknown>('POST', `/groups/${id}/join`),
   heartbeat: (id: string, secondsSpent: number) =>
     req<{ ok: boolean }>('POST', `/groups/${id}/heartbeat`, { secondsSpent }),
   getChat: (id: string, limit = 50) =>

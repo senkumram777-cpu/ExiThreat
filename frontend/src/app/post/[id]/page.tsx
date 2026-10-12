@@ -172,7 +172,7 @@ export default function PostPage() {
         <div className="text-xs font-mono text-gray-400 uppercase tracking-widest mb-3">
           Push to Next Group
         </div>
-        <PushButton postId={id} isOC={isOC} />
+        <PushButton postId={id} isOC={isOC} firstLookOpen={viewState === 'first-look'} />
       </div>
 
       {/* OC manual push */}

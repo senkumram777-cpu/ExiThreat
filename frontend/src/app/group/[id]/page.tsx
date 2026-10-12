@@ -11,48 +11,28 @@ export default function GroupPage() {
   const [group, setGroup] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [joined, setJoined] = useState(false);
-  const [joining, setJoining] = useState(false);
 
   const userId = typeof window !== 'undefined' ? localStorage.getItem('exithreat_userId') ?? '' : '';
   const username = typeof window !== 'undefined' ? localStorage.getItem('exithreat_username') ?? '' : '';
 
-  // Loaded again after joining: the posts are only sent to members.
+  // Only members get an answer; anyone else is refused.
   useEffect(() => {
     if (!id) return;
     groupsApi
       .get(id)
-      .then((data) => {
-        setGroup(data);
-        setJoined(data.isMember);
-      })
+      .then(setGroup)
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
-  }, [id, joined]);
+  }, [id]);
 
-  // Heartbeat every 60s
+  // Heartbeat every 60s, reporting the time since the last one
   useEffect(() => {
-    if (!id || !joined) return;
-    const start = Date.now();
+    if (!id || !group) return;
     const interval = setInterval(() => {
-      const seconds = Math.round((Date.now() - start) / 1000);
-      groupsApi.heartbeat(id, seconds).catch(() => {});
+      groupsApi.heartbeat(id, 60).catch(() => {});
     }, 60_000);
     return () => clearInterval(interval);
-  }, [id, joined]);
-
-  const handleJoin = async () => {
-    if (joining || !id) return;
-    setJoining(true);
-    try {
-      await groupsApi.join(id);
-      setJoined(true);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setJoining(false);
-    }
-  };
+  }, [id, group]);
 
   if (loading) {
     return (
@@ -81,20 +61,9 @@ export default function GroupPage() {
             {group._count.members} members · Trust score {(group.trustScore * 100).toFixed(1)}%
           </div>
         </div>
-        {!joined && (
-          <button
-            onClick={handleJoin}
-            disabled={joining}
-            className="px-4 py-2 border border-accent-teal text-accent-teal rounded-lg font-mono text-sm disabled:opacity-50 hover:bg-accent-teal/10 transition-colors"
-          >
-            {joining ? 'Joining…' : 'Join Group'}
-          </button>
-        )}
-        {joined && (
-          <span className="px-3 py-1 text-xs font-mono text-green-400 border border-green-800 rounded-full">
-            Member
-          </span>
-        )}
+        <span className="px-3 py-1 text-xs font-mono text-green-400 border border-green-800 rounded-full">
+          Member
+        </span>
       </div>
 
       {/* Active posts */}
@@ -102,11 +71,7 @@ export default function GroupPage() {
         <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest mb-3">
           Active Disclosures ({group._count.currentPosts})
         </h2>
-        {!joined ? (
-          <div className="text-gray-600 font-mono text-sm text-center py-6 border border-gray-800 rounded-xl">
-            Only members can read this group&apos;s disclosures.
-          </div>
-        ) : group.currentPosts.length === 0 ? (
+        {group.currentPosts.length === 0 ? (
           <div className="text-gray-600 font-mono text-sm text-center py-6 border border-gray-800 rounded-xl">
             No active posts in this group.
           </div>
@@ -134,17 +99,10 @@ export default function GroupPage() {
       </section>
 
       {/* Group chat */}
-      {joined && (
-        <section className="border-t border-gray-800 pt-6">
-          <GroupChat groupId={group.id} currentUserId={userId} currentUsername={username} />
-        </section>
-      )}
+      <section className="border-t border-gray-800 pt-6">
+        <GroupChat groupId={group.id} currentUserId={userId} currentUsername={username} />
+      </section>
 
-      {!joined && (
-        <div className="text-center text-gray-600 font-mono text-xs py-4 border border-gray-800 rounded-xl">
-          Join this group to read its disclosures, chat and take part in pushes.
-        </div>
-      )}
     </div>
   );
 }

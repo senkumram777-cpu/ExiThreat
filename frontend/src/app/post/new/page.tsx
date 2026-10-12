@@ -30,7 +30,7 @@ export default function NewPostPage() {
     <div className="max-w-lg mx-auto">
       <h1 className="text-xl font-mono font-bold text-accent-red mb-2">New Disclosure</h1>
       <p className="text-xs font-mono text-gray-500 mb-6 leading-relaxed">
-        Your submission will be sent to a random processing group. Do not include identifying
+        Your submission will be sent to a random group that you are not in. Do not include identifying
         information about yourself — the system will auto-redact PII, but accuracy is not
         guaranteed. A secure image strip will be generated for first-look viewers.
       </p>

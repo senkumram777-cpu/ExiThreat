@@ -6,9 +6,10 @@ import { push as pushApi, type PushStatus } from '@/lib/api';
 interface PushButtonProps {
   postId: string;
   isOC: boolean; // OC cannot vote
+  firstLookOpen: boolean; // the reader votes after closing the first look
 }
 
-export default function PushButton({ postId, isOC }: PushButtonProps) {
+export default function PushButton({ postId, isOC, firstLookOpen }: PushButtonProps) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -30,7 +31,8 @@ export default function PushButton({ postId, isOC }: PushButtonProps) {
     // Poll every 15s so the bar updates as other members vote
     const interval = setInterval(loadStatus, 15_000);
     return () => clearInterval(interval);
-  }, [loadStatus]);
+    // Also reloaded when the first look closes, which is when voting becomes possible.
+  }, [loadStatus, firstLookOpen]);
 
   const handleVote = async () => {
     if (acting || !status) return;
@@ -68,6 +70,8 @@ export default function PushButton({ postId, isOC }: PushButtonProps) {
   }
 
   const pct = status?.pushPercentage ?? 0;
+  // A vote is only taken from someone who has opened the first look.
+  const mustReadFirst = firstLookOpen || (!!status && !status.hasRead);
 
   return (
     <div className="flex flex-col gap-2">
@@ -90,18 +94,26 @@ export default function PushButton({ postId, isOC }: PushButtonProps) {
       {/* Vote button */}
       <button
         onClick={handleVote}
-        disabled={acting}
+        disabled={acting || mustReadFirst}
         className={[
           'w-full py-3 rounded-lg font-mono font-bold text-sm tracking-wider transition-all',
           'border-2 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-navy-900',
           status?.hasVoted
             ? 'border-gray-600 text-gray-400 hover:border-accent-red hover:text-accent-red focus:ring-accent-red'
             : 'border-accent-teal text-accent-teal hover:bg-accent-teal hover:text-navy-900 focus:ring-accent-teal',
-          acting ? 'opacity-50 cursor-not-allowed' : '',
+          acting || mustReadFirst ? 'opacity-50 cursor-not-allowed' : '',
         ].join(' ')}
       >
         {acting ? '…' : status?.hasVoted ? '✕ Retract Push' : '▲ Push'}
       </button>
+
+      {mustReadFirst && (
+        <div className="text-center text-xs font-mono text-gray-500">
+          {firstLookOpen
+            ? 'Finish reading the first look, then vote.'
+            : 'You can vote once you have opened the first look. Reload the page to open it.'}
+        </div>
+      )}
 
       {status?.thresholdReached && (
         <div className="text-center text-xs font-mono text-green-400 animate-pulse">
