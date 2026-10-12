@@ -20,7 +20,7 @@ alerts and live streams.
 
 | Path | What it is |
 |---|---|
-| `frontend/` | Next.js 14 (App Router), React 18, Tailwind, next-pwa, RxDB |
+| `frontend/` | Next.js 14 (App Router), React 18, Tailwind, next-pwa |
 | `backend/` | Express API in TypeScript, Prisma, PostgreSQL, JWT auth |
 | `backend/prisma/schema.prisma` | Database schema |
 | `docker-compose.yml` | Postgres, backend and frontend together |
@@ -40,8 +40,10 @@ alerts and live streams.
    generated name. A user sees only their own group: its posts, its chat (which never leaves
    it) and its member names. One network address can create 5 accounts a day.
 3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
-   server makes a redacted copy, replacing emails, phone numbers, names, addresses, URLs, dates
-   and ID numbers with labels such as `[NAME REDACTED]`, and places the post in a random group
+   server makes a redacted copy, replacing emails, phone numbers, names, companies, addresses,
+   URLs, dates and ID numbers (Indian and US formats) with labels such as `[NAME REDACTED]`.
+   The author must look at that redacted version before submitting ("Preview redaction"), and
+   finds their posts again under "Mine". The server places the post in a random group
    that has at least 5 members and that the author is not in. If there is no such group yet,
    the post is refused and nothing is saved.
    A post, its comments, votes and weightage can be read only by members of the group it is
@@ -72,6 +74,8 @@ alerts and live streams.
 | `/` | Home |
 | `/auth/register`, `/auth/login`, `/account` | Sign up, sign in; sign out and change password |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
+| `/disclosures` | The user's own posts ("Mine") |
+| `/offline` | Shown by the service worker when there is no connection |
 | `/post/new`, `/post/[id]` | Write a disclosure; view one, vote and comment |
 | `/promic` | A ProMic user's own backups |
 | `/law-enforcement` | Officer sign in (separate from ExiThreat accounts) |
@@ -86,6 +90,7 @@ All routes are under `/api` and, except register and login, need `Authorization:
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
+| `POST /posts/preview`, `GET /posts/mine` | The redacted version of a text before it is posted; the caller's own posts |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |
@@ -95,8 +100,8 @@ All routes are under `/api` and, except register and login, need `Authorization:
 ### Database
 
 `User`, `Group`, `GroupMember`, `Post`, `PushVote`, `PostHistory`, `Comment`, `ViewRecord`,
-`ChatMessage`, `ProMicLink`. There is no migration history: the schema is applied with
-`prisma db push`.
+`ChatMessage`, `ProMicLink`. The tables are changed only through the migrations in
+`backend/prisma/migrations` (see [Changing the database](#changing-the-database)).
 
 ## ProMic: a user's own backups (`/promic`)
 
@@ -172,7 +177,7 @@ Needs Node 20 and a PostgreSQL database.
 cd backend
 cp .env.example .env          # then edit it
 npm install
-npx prisma db push
+npx prisma migrate deploy     # creates or updates the tables
 npm run dev                   # http://localhost:4000
 
 # frontend
@@ -206,8 +211,28 @@ Frontend (`frontend/.env.local`, or build arguments):
 
 | Where | Command |
 |---|---|
-| `backend` | `npm run dev`, `npm run build`, `npm start`, `npm run db:push`, `npm run db:generate`, `npm run db:studio` |
+| `backend` | `npm run dev`, `npm run build`, `npm start`, `npm run typecheck`, `npm test`, `npm run test:api`, `npm run db:migrate`, `npm run db:deploy`, `npm run db:generate`, `npm run db:studio` |
 | `frontend` | `npm run dev`, `npm run build`, `npm start`, `npm run lint` |
+
+### Tests
+
+| Command (in `backend`) | What it checks |
+|---|---|
+| `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping, weight, size checks |
+| `npm run test:api` | Starts the real server on an empty, throwaway PostgreSQL schema and walks through reading rules, the first look, voting and moving, and account limits. Needs `DATABASE_URL`; it builds the schema from the migrations and removes it afterwards |
+
+GitHub Actions (`.github/workflows/ci.yml`) runs both, the type checks and the website build
+on every push and pull request.
+
+### Changing the database
+
+1. Edit `backend/prisma/schema.prisma`.
+2. `npm run db:migrate -- --name what_changed` creates a folder in `backend/prisma/migrations`
+   and applies it to your local database. Commit the folder.
+3. On the next deploy the server applies it by itself before starting
+   (`backend/scripts/start.js`). If a migration fails, the server does not start.
+
+Do not use `prisma db push` any more: it changes tables without leaving a migration behind.
 
 ## Hosting (Fly.io)
 
@@ -223,7 +248,7 @@ cd frontend && fly deploy --ha=false
 ```
 
 Secrets on `exithreat-api` (`fly secrets set`): `JWT_SECRET`, `PROMIC_SERVICE_ACCOUNT_JSON`.
-The backend image applies the schema with `prisma db push` each time it starts.
+The backend image applies any new migrations each time it starts, then starts the API.
 
 ## Maps
 
@@ -269,8 +294,14 @@ These public servers are meant for light use.
 - A forgotten password cannot be recovered, and an account cannot be deleted by its owner.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
   15 accounts before a post can also move on.
-- Redaction is pattern-based and tuned to English and US formats, so it will miss some names
-  and numbers.
+- Redaction is pattern-based, for English text with Indian and US formats. It misses names in
+  lower case, a single name with nothing around it to mark it as one, and other languages. It
+  redacts place names along with personal names. Posts made before a rule was added keep the
+  redaction they got at the time.
+- A post cannot be edited or deleted, and there is no moderation, reporting, terms of use or
+  privacy policy on the site yet.
+- The author is not notified when a post moves or gets a comment; "Mine" shows the current
+  counts.
 - The move to the next group runs by polling every 10 seconds.
 - Live listening and the officer map have been checked against ProMic's backend but not yet
   clicked through end to end in a browser.

@@ -10,6 +10,7 @@
  */
 
 import { prisma } from '../index';
+import { weightOf } from './weight';
 
 export interface WeightageResult {
   postId: string;
@@ -22,18 +23,6 @@ export interface WeightageResult {
     movedAt: Date;
     wasManualPush: boolean;
   }>;
-}
-
-/** The weight of a post, from its history in the order it happened. */
-function weightOf(history: Array<{ groupId: string; pushPercentage: number; wasManualPush: boolean }>): number {
-  const counted = new Set<string>();
-  let total = 0;
-  for (const h of history) {
-    if (h.wasManualPush || counted.has(h.groupId)) continue;
-    counted.add(h.groupId);
-    total += Math.min(h.pushPercentage, 100);
-  }
-  return total;
 }
 
 export async function getPostWeightage(postId: string): Promise<WeightageResult | null> {

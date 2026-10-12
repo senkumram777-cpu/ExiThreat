@@ -4,15 +4,19 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
 
 ## Layout
 
-- `frontend/` — Next.js PWA (React, RxDB, next-pwa, Tailwind), dev server on port 3000
+- `frontend/` — Next.js PWA (React, next-pwa, Tailwind), dev server on port 3000
 - `backend/` — Express API in TypeScript with Prisma, JWT auth, on port 4000 under `/api`
-- `backend/prisma/schema.prisma` — database schema
+- `backend/prisma/schema.prisma` — database schema; `backend/prisma/migrations/` — its history
+- `backend/src/tests/` — unit tests and the API test
 - `docker-compose.yml` — runs postgres, backend and frontend together
 
 ## Commands
 
 - `docker compose up` — full stack
-- `backend`: `npm run dev`, `npm run build`, `npm run db:migrate`, `npm run db:generate`
+- `backend`: `npm run dev`, `npm run build`, `npm run typecheck`, `npm test` (unit, no
+  database), `npm run test:api` (needs `DATABASE_URL`; uses a throwaway schema),
+  `npm run db:migrate -- --name <what_changed>`, `npm run db:generate`
+- A schema change always comes with a new migration folder. Never `prisma db push`.
 - `frontend`: `npm run dev`, `npm run build`, `npm run lint`
 
 ## Sibling project: ProMic
@@ -62,7 +66,10 @@ credentials email ProMic sends links to this page, so the route must keep its pa
 - Database: Fly Postgres app `exithreat-db`, attached to `exithreat-api` as `DATABASE_URL`
 - Deploy with `fly deploy --ha=false` from `frontend/` or `backend/`. The API URL is compiled
   into the website at build time (`NEXT_PUBLIC_API_URL` build arg in `frontend/fly.toml`).
-- There is no Prisma migration history; the backend image runs `prisma db push` on start.
+- The backend image runs `backend/scripts/start.js`: `prisma migrate deploy`, then the API. A
+  failed migration stops the server from starting.
+- The service worker is registered by `frontend/src/components/ServiceWorker.tsx`, not by
+  next-pwa. It must never keep API responses (see the comment in `frontend/next.config.js`).
 
 The page also drives ProMic's fallback for a phone that cannot be reached (`leFallbackStatus`,
 `leStartFallback`): a Connected User's code, then a ProMic administrator's approval, which the

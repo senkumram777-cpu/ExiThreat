@@ -52,6 +52,7 @@ model GroupMember {
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, userId])
+  @@index([userId])
 }
 
 model Post {
@@ -70,6 +71,9 @@ model Post {
   history     PostHistory[]
   comments    Comment[]
   viewRecords ViewRecord[]
+
+  @@index([currentGroupId])
+  @@index([ocUserId])
 }
 
 // Tracks each vote cast on a post within a specific group
@@ -98,6 +102,8 @@ model PostHistory {
 
   post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
 }
 
 // Tagged comments that travel with the post across groups
@@ -110,6 +116,8 @@ model Comment {
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
 }
 
 // Who has had the first look at a post's unredacted content. `viewedAt` is when it was first
@@ -138,6 +146,8 @@ model ChatMessage {
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([groupId, createdAt])
 }
 
 // Links an ExiThreat account to the same person's ProMic host account (a Firebase uid in the

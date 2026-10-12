@@ -21,7 +21,7 @@ export default function HomePage() {
           A secure, anonymous platform for disclosing workplace abuses. Your story
           travels through isolated peer groups — never public, always protected.
         </p>
-        <div className="flex gap-3 mt-2">
+        <div className="flex flex-wrap justify-center gap-3 mt-2">
           {isLoggedIn ? (
             <>
               <Link
@@ -34,7 +34,13 @@ export default function HomePage() {
                 href="/groups"
                 className="px-6 py-3 border border-accent-teal text-accent-teal rounded-lg font-mono font-bold text-sm hover:bg-accent-teal/10 transition-colors no-underline"
               >
-                My Groups
+                My Group
+              </Link>
+              <Link
+                href="/disclosures"
+                className="px-6 py-3 border border-gray-700 text-gray-300 rounded-lg font-mono font-bold text-sm hover:border-gray-500 transition-colors no-underline"
+              >
+                My Disclosures
               </Link>
             </>
           ) : (

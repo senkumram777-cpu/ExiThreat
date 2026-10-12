@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import NavLinks from '@/components/NavLinks';
+import ServiceWorker from '@/components/ServiceWorker';
 
 export const metadata: Metadata = {
   title: 'ExiThreat',
@@ -23,12 +24,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-dvh flex flex-col">
+        <ServiceWorker />
         {/* Top nav */}
         <nav className="sticky top-0 z-50 border-b border-gray-800 bg-navy-900/95 backdrop-blur-sm">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+          {/* On a narrow phone the links drop to a second line under the name. */}
+          <div className="max-w-2xl mx-auto px-4 min-h-14 py-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
             <a href="/" className="text-accent-red font-mono font-bold text-lg tracking-tight no-underline hover:no-underline">
               ExiThreat
             </a>

@@ -22,9 +22,10 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-# The Prisma CLI (a dev dependency) is needed at start-up to apply the schema.
+# The Prisma CLI (a dev dependency) is needed at start-up to apply the migrations.
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY prisma ./prisma
+COPY scripts ./scripts
 EXPOSE 4000
-# There is no migration history, so the tables are brought in line with schema.prisma on start.
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js db push --skip-generate && node dist/index.js"]
+# Applies the migrations in prisma/migrations, then starts the API (see scripts/start.js).
+CMD ["node", "scripts/start.js"]

@@ -30,6 +30,17 @@ export interface Post {
   _count: { pushVotes: number; comments: number };
 }
 
+/** One of the signed-in user's own posts, as listed under "My Disclosures". */
+export interface MyPost {
+  id: string;
+  redactedContent: string;
+  totalWeight: number;
+  createdAt: string;
+  lastManualPushAt: string | null;
+  /** `history` is the number of groups the post has left so far. */
+  _count: { pushVotes: number; comments: number; history: number };
+}
+
 export interface Comment {
   id: string;
   postId: string;
@@ -192,6 +203,10 @@ export const auth = {
 export const posts = {
   create: (content: string) =>
     req<Pick<Post, 'id' | 'redactedContent' | 'totalWeight' | 'createdAt' | 'currentGroupId'>>('POST', '/posts', { content }),
+  /** What the redacted version of this text would be. Nothing is saved. */
+  preview: (content: string) => req<{ redactedContent: string }>('POST', '/posts/preview', { content }),
+  /** The signed-in user's own posts, newest first. */
+  mine: () => req<MyPost[]>('GET', '/posts/mine'),
   get: (id: string) => req<Post>('GET', `/posts/${id}`),
   /** Fetches the unredacted PNG strip as a Blob. Refused once the first look is used up. */
   getStrip: (id: string) => req<Blob>('GET', `/posts/${id}/strip`, undefined, true),

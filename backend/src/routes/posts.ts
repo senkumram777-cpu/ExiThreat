@@ -60,6 +60,33 @@ router.post('/', requireAuth, handle(async (req: AuthRequest, res: Response): Pr
   res.status(201).json(post);
 }));
 
+// POST /api/posts/preview — what the redacted version of this text would be. Saves nothing.
+router.post('/preview', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const content = readText(req.body?.content, 'content', LIMITS.postMax, LIMITS.postMin);
+  if (!content.ok) {
+    res.status(400).json({ error: content.error });
+    return;
+  }
+  res.json({ redactedContent: redactContent(content.text) });
+}));
+
+// GET /api/posts/mine — the caller's own posts, newest first
+router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const posts = await prisma.post.findMany({
+    where: { ocUserId: req.userId! },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      redactedContent: true,
+      totalWeight: true,
+      createdAt: true,
+      lastManualPushAt: true,
+      _count: { select: { pushVotes: true, comments: true, history: true } },
+    },
+  });
+  res.json(posts);
+}));
+
 // GET /api/posts/:id/strip — serves the PNG paper strip (unredacted, first-look only)
 router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;

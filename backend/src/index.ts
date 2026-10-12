@@ -53,7 +53,15 @@ app.use('/api/push', pushRouter);
 app.use('/api/weightage', weightageRouter);
 app.use('/api/promic', promicRouter);
 
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+// Also asks the database, so a server that is up but cannot reach it is reported as down.
+app.get('/api/health', (_req, res) => {
+  prisma.$queryRaw`SELECT 1`
+    .then(() => res.json({ status: 'ok' }))
+    .catch((err) => {
+      console.error('Health check: database not reachable:', err);
+      res.status(503).json({ status: 'database unavailable' });
+    });
+});
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });

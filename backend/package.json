@@ -6,9 +6,13 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:hosted": "node scripts/start.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --require ts-node/register/transpile-only --test src/tests/unit.test.ts",
+    "test:api": "node --require ts-node/register/transpile-only src/tests/api.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio"
   },
   "dependencies": {

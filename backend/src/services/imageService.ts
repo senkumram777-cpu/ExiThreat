@@ -29,7 +29,7 @@ const FONT_FAMILY = 'DejaVu Sans Mono, Courier New, Courier, monospace';
  * Lines break between words; only a word longer than a line is cut. Characters are counted
  * as code points so that a character outside the basic plane is never split in two.
  */
-function wrapText(text: string): string[] {
+export function wrapText(text: string): string[] {
   const lines: string[] = [];
   for (const paragraph of text.split(/\r?\n/)) {
     let line: string[] = [];
