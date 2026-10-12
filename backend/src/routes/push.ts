@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
+import { postAccess, NOT_IN_GROUP } from '../services/accessService';
 
 const router = Router();
 
@@ -152,6 +153,10 @@ router.get('/:postId/status', requireAuth, async (req: AuthRequest, res: Respons
   const post = await prisma.post.findUnique({ where: { id: postId } });
   if (!post) {
     res.status(404).json({ error: 'Post not found' });
+    return;
+  }
+  if (!(await postAccess(post, userId)).canRead) {
+    res.status(403).json({ error: NOT_IN_GROUP });
     return;
   }
 

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { posts as postsApi, push as pushApi, weightage as weightageApi, type Post, type WeightageResult } from '@/lib/api';
-import { hasSeenPost, markPostAsSeen } from '@/lib/rxdb/viewTracker';
 import SecureMarquee from '@/components/SecureMarquee';
 import PushButton from '@/components/PushButton';
 import CommentSection from '@/components/CommentSection';
@@ -17,22 +16,22 @@ export default function PostPage() {
   const [weightageData, setWeightageData] = useState<WeightageResult | null>(null);
   const [viewState, setViewState] = useState<ViewState>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [firstLookNote, setFirstLookNote] = useState<string | null>(null);
   const [manualPushCooldown, setManualPushCooldown] = useState<string | null>(null);
   const [manualPushing, setManualPushing] = useState(false);
 
   const userId = typeof window !== 'undefined' ? localStorage.getItem('exithreat_userId') ?? '' : '';
-  const isOC = post?.ocUserId === userId;
+  const isOC = post?.isAuthor ?? false;
 
   useEffect(() => {
     if (!id) return;
     (async () => {
       try {
-        const [postData, seen] = await Promise.all([
-          postsApi.get(id),
-          hasSeenPost(id),
-        ]);
+        // The server decides whether the first look is still open, so the answer is the same
+        // on every device the reader signs in on.
+        const postData = await postsApi.get(id);
         setPost(postData);
-        setViewState(seen ? 'redacted' : 'first-look');
+        setViewState(postData.firstLook === 'available' ? 'first-look' : 'redacted');
       } catch (err) {
         setError((err as Error).message);
         setViewState('redacted');
@@ -45,11 +44,15 @@ export default function PostPage() {
     weightageApi.get(id).then(setWeightageData).catch(() => {});
   }, [id]);
 
-  const handleViewComplete = useCallback(async () => {
-    if (!id) return;
-    await markPostAsSeen(id);
+  const handleViewComplete = useCallback(() => {
     setViewState('redacted');
-  }, [id]);
+  }, []);
+
+  // The strip could not be loaded: show the redacted version instead of an error.
+  const handleFirstLookUnavailable = useCallback((reason: string) => {
+    setFirstLookNote(`The first look could not be opened (${reason}). Reload the page to try again.`);
+    setViewState('redacted');
+  }, []);
 
   const handleManualPush = async () => {
     if (!id || manualPushing) return;
@@ -108,13 +111,20 @@ export default function PostPage() {
       {/* First-Look strip OR Redacted content */}
       {viewState === 'first-look' ? (
         <div className="flex flex-col items-center gap-2">
-          <SecureMarquee postId={id} onViewComplete={handleViewComplete} />
+          <SecureMarquee
+            postId={id}
+            onViewComplete={handleViewComplete}
+            onUnavailable={handleFirstLookUnavailable}
+          />
         </div>
       ) : (
         <div className="p-4 bg-navy-800 rounded-xl border border-gray-800">
           <div className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">
             Redacted Version
           </div>
+          {firstLookNote && (
+            <div className="text-xs font-mono text-yellow-600 mb-3">{firstLookNote}</div>
+          )}
           <p className="font-mono text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
             {post.redactedContent}
           </p>

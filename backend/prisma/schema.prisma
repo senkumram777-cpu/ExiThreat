@@ -52,7 +52,7 @@ model GroupMember {
 
 model Post {
   id               String    @id @default(uuid())
-  originalContent  String    // stored encrypted; rendered as PNG, never as raw text to client
+  originalContent  String    // plain text in the database; sent to clients only as a PNG
   redactedContent  String
   ocUserId         String
   currentGroupId   String
@@ -108,12 +108,15 @@ model Comment {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-// Server-side record of who has viewed unredacted content (RxDB is primary, this is audit backup)
+// Who has had the first look at a post's unredacted content. `viewedAt` is when it was first
+// opened; `completedAt` is when the reader closed it. Until it is closed it can be reopened
+// for a short time (see FIRST_LOOK_WINDOW_MS in routes/posts.ts).
 model ViewRecord {
-  id       String   @id @default(uuid())
-  postId   String
-  userId   String
-  viewedAt DateTime @default(now())
+  id          String    @id @default(uuid())
+  postId      String
+  userId      String
+  viewedAt    DateTime  @default(now())
+  completedAt DateTime?
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -19,7 +19,11 @@ export interface Post {
   totalWeight: number;
   createdAt: string;
   currentGroupId: string;
-  ocUserId: string;
+  /** Whether the signed-in user wrote it. Who wrote it is never sent. */
+  isAuthor: boolean;
+  isMember: boolean;
+  /** Whether the signed-in user can still open the unredacted first look. */
+  firstLook: 'available' | 'used';
   lastManualPushAt: string | null;
   _count: { pushVotes: number; comments: number };
 }
@@ -38,6 +42,19 @@ export interface Group {
   trustScore: number;
   createdAt: string;
   _count: { members: number; currentPosts: number };
+}
+
+/** `members` and `currentPosts` are empty unless the signed-in user is a member. */
+export interface GroupDetail extends Group {
+  isMember: boolean;
+  members: Array<{ username: string }>;
+  currentPosts: Array<{
+    id: string;
+    redactedContent: string;
+    totalWeight: number;
+    createdAt: string;
+    _count: { pushVotes: number; comments: number };
+  }>;
 }
 
 export interface PushStatus {
@@ -102,6 +119,12 @@ function getToken(): string | null {
   return localStorage.getItem('exithreat_token');
 }
 
+// Earlier versions of the service worker kept copies of API responses, the first-look image
+// among them, in this cache. next.config.js no longer fills it; this empties what is left.
+if (typeof window !== 'undefined' && 'caches' in window) {
+  caches.delete('cross-origin').catch(() => {});
+}
+
 async function req<T>(
   method: string,
   path: string,
@@ -145,8 +168,17 @@ export const posts = {
   create: (content: string) =>
     req<Pick<Post, 'id' | 'redactedContent' | 'totalWeight' | 'createdAt' | 'currentGroupId'>>('POST', '/posts', { content }),
   get: (id: string) => req<Post>('GET', `/posts/${id}`),
-  /** Fetches the unredacted PNG strip as a Blob. Only works on first call per device. */
+  /** Fetches the unredacted PNG strip as a Blob. Refused once the first look is used up. */
   getStrip: (id: string) => req<Blob>('GET', `/posts/${id}/strip`, undefined, true),
+  /** Ends the first look. `keepalive` lets it go out while the page is being left. */
+  stripDone: (id: string) => {
+    const token = getToken();
+    fetch(`${BASE}/posts/${id}/strip/done`, {
+      method: 'POST',
+      keepalive: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => {});
+  },
   getComments: (id: string) => req<Comment[]>('GET', `/posts/${id}/comments`),
   addComment: (id: string, content: string) =>
     req<Comment>('POST', `/posts/${id}/comments`, { content }),
@@ -156,7 +188,7 @@ export const posts = {
 
 export const groups = {
   list: () => req<Group[]>('GET', '/groups'),
-  get: (id: string) => req<Group & { members: unknown[]; currentPosts: unknown[] }>('GET', `/groups/${id}`),
+  get: (id: string) => req<GroupDetail>('GET', `/groups/${id}`),
   create: (name: string) => req<Group>('POST', '/groups', { name }),
   join: (id: string) => req<unknown>('POST', `/groups/${id}/join`),
   heartbeat: (id: string, secondsSpent: number) =>

@@ -60,7 +60,7 @@ export default function NewPostPage() {
 
         <div className="flex items-center gap-3 p-3 bg-navy-800 rounded-lg border border-gray-800 text-xs font-mono text-gray-500">
           <span className="text-yellow-500">⚠</span>
-          PII will be auto-redacted. Your identity is not linked to this post.
+          PII will be auto-redacted. Other members are not shown who wrote this post.
           Review before submitting.
         </div>
 

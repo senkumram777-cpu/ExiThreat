@@ -3,22 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { groups as groupsApi } from '@/lib/api';
+import { groups as groupsApi, type GroupDetail } from '@/lib/api';
 import GroupChat from '@/components/GroupChat';
-
-interface GroupDetail {
-  id: string;
-  name: string;
-  trustScore: number;
-  members: Array<{ id: string; user: { id: string; username: string }; visitCount: number }>;
-  currentPosts: Array<{
-    id: string;
-    redactedContent: string;
-    totalWeight: number;
-    createdAt: string;
-    _count: { pushVotes: number; comments: number };
-  }>;
-}
 
 export default function GroupPage() {
   const { id } = useParams<{ id: string }>();
@@ -31,18 +17,18 @@ export default function GroupPage() {
   const userId = typeof window !== 'undefined' ? localStorage.getItem('exithreat_userId') ?? '' : '';
   const username = typeof window !== 'undefined' ? localStorage.getItem('exithreat_username') ?? '' : '';
 
+  // Loaded again after joining: the posts are only sent to members.
   useEffect(() => {
     if (!id) return;
     groupsApi
       .get(id)
       .then((data) => {
-        setGroup(data as GroupDetail);
-        const isMember = (data as GroupDetail).members.some((m) => m.user.id === userId);
-        setJoined(isMember);
+        setGroup(data);
+        setJoined(data.isMember);
       })
       .catch((err) => setError((err as Error).message))
       .finally(() => setLoading(false));
-  }, [id, userId]);
+  }, [id, joined]);
 
   // Heartbeat every 60s
   useEffect(() => {
@@ -92,7 +78,7 @@ export default function GroupPage() {
         <div>
           <h1 className="text-xl font-mono font-bold text-accent-teal">{group.name}</h1>
           <div className="text-xs font-mono text-gray-500 mt-1">
-            {group.members.length} members · Trust score {(group.trustScore * 100).toFixed(1)}%
+            {group._count.members} members · Trust score {(group.trustScore * 100).toFixed(1)}%
           </div>
         </div>
         {!joined && (
@@ -114,9 +100,13 @@ export default function GroupPage() {
       {/* Active posts */}
       <section>
         <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest mb-3">
-          Active Disclosures ({group.currentPosts.length})
+          Active Disclosures ({group._count.currentPosts})
         </h2>
-        {group.currentPosts.length === 0 ? (
+        {!joined ? (
+          <div className="text-gray-600 font-mono text-sm text-center py-6 border border-gray-800 rounded-xl">
+            Only members can read this group&apos;s disclosures.
+          </div>
+        ) : group.currentPosts.length === 0 ? (
           <div className="text-gray-600 font-mono text-sm text-center py-6 border border-gray-800 rounded-xl">
             No active posts in this group.
           </div>
@@ -152,7 +142,7 @@ export default function GroupPage() {
 
       {!joined && (
         <div className="text-center text-gray-600 font-mono text-xs py-4 border border-gray-800 rounded-xl">
-          Join this group to access chat and participate in pushes.
+          Join this group to read its disclosures, chat and take part in pushes.
         </div>
       )}
     </div>

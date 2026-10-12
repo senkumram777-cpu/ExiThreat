@@ -4,18 +4,18 @@
  * SecureMarquee — First-Look unredacted viewer.
  *
  * Security model:
- *  1. The strip is rendered as an <img> pointing at the backend PNG endpoint.
+ *  1. The strip is rendered as an <img> from a PNG the backend draws.
  *     There is no raw text in the DOM.
- *  2. A transparent "glass-pane" div covers the image to block:
- *       - Right-click context menu (onContextMenu preventDefault)
- *       - Long-press save on mobile (touch-action: none + onTouchStart preventDefault)
- *       - Drag-to-save (draggable=false + onDragStart preventDefault)
+ *  2. A transparent "glass-pane" div covers the whole image, however far it is scrolled, to
+ *     block the right-click menu, long-press save on mobile and drag-to-save. It lets vertical
+ *     swipes through (touch-action: pan-y) so the strip can be scrolled on a phone.
  *  3. CSS user-select: none everywhere.
- *  4. The container is exactly 25 characters wide (monospace, 14px = 350px).
- *  5. The image scrolls vertically within the container.
- *  6. On scroll-end (IntersectionObserver on a sentinel) OR on component
- *     unmount, onViewComplete() is called — the parent marks the post as seen
- *     in RxDB and switches to the redacted view.
+ *  4. The strip is 25 characters wide and scrolls vertically within the container.
+ *  5. The look ends when the reader taps "Done reading" or leaves the page. Only then is it
+ *     used up on the server; onViewComplete() switches the parent to the redacted view.
+ *     If the strip cannot be loaded, onUnavailable() does the same without using the look up.
+ *
+ * None of this stops a screenshot or a photo of the screen.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -24,99 +24,83 @@ import { posts as postsApi } from '@/lib/api';
 interface SecureMarqueeProps {
   postId: string;
   onViewComplete: () => void;
+  onUnavailable: (reason: string) => void;
 }
 
-export default function SecureMarquee({ postId, onViewComplete }: SecureMarqueeProps) {
+export default function SecureMarquee({ postId, onViewComplete, onUnavailable }: SecureMarqueeProps) {
   const [stripUrl, setStripUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
-  const completedRef = useRef(false);
-  const blobUrlRef = useRef<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const shownRef = useRef(false);
+  const closedRef = useRef(false);
+  const mountedRef = useRef(false);
 
-  const triggerComplete = useCallback(() => {
-    if (completedRef.current) return;
-    completedRef.current = true;
-    onViewComplete();
-  }, [onViewComplete]);
+  // Tells the server the look is over. Does nothing if the strip never reached the screen.
+  const close = useCallback(() => {
+    if (closedRef.current || !shownRef.current) return;
+    closedRef.current = true;
+    postsApi.stripDone(postId);
+  }, [postId]);
 
   // Fetch PNG strip from backend
   useEffect(() => {
     let cancelled = false;
+    let url: string | null = null;
     (async () => {
       try {
         const blob = await postsApi.getStrip(postId);
         if (cancelled) return;
-        const url = URL.createObjectURL(blob);
-        blobUrlRef.current = url;
+        url = URL.createObjectURL(blob);
         setStripUrl(url);
       } catch (err) {
-        if (!cancelled) setError((err as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) onUnavailable((err as Error).message);
       }
     })();
     return () => {
       cancelled = true;
+      if (url) URL.revokeObjectURL(url);
     };
-  }, [postId]);
+  }, [postId, onUnavailable]);
 
-  // Revoke blob URL on unmount, trigger complete
+  // Leaving the page ends the look. The check is deferred because React's development mode
+  // unmounts and remounts every component once, which must not count as leaving.
   useEffect(() => {
+    mountedRef.current = true;
+    window.addEventListener('pagehide', close);
     return () => {
-      triggerComplete();
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
+      mountedRef.current = false;
+      window.removeEventListener('pagehide', close);
+      setTimeout(() => {
+        if (!mountedRef.current) close();
+      }, 0);
     };
-  }, [triggerComplete]);
+  }, [close]);
 
-  // IntersectionObserver: fire onViewComplete when the bottom sentinel is visible
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) triggerComplete();
-      },
-      { root: containerRef.current, threshold: 0.9 },
-    );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [stripUrl, triggerComplete]);
+  const handleDone = () => {
+    close();
+    onViewComplete();
+  };
 
   const blockInteraction = (e: React.SyntheticEvent) => e.preventDefault();
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-48 bg-navy-800 rounded-lg">
-        <span className="text-accent-teal text-sm font-mono animate-pulse">
-          Decrypting strip…
-        </span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-48 bg-navy-800 rounded-lg border border-accent-red">
-        <span className="text-accent-red text-sm font-mono px-4 text-center">{error}</span>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div className="flex flex-col items-center gap-2 w-full">
       <div className="text-xs text-accent-teal font-mono tracking-widest uppercase mb-1">
         ▼ First Look — Unredacted ▼
       </div>
 
-      {/* 25-char wide scrolling container: 25 * 14px char + 2*12px padding = 374px */}
+      {!shown && (
+        <div className="flex items-center justify-center h-48 w-full bg-navy-800 rounded-lg">
+          <span className="text-accent-teal text-sm font-mono animate-pulse">Loading strip…</span>
+        </div>
+      )}
+
+      {/* Scrolling container: as wide as the strip (25 * 14px + 2 * 12px padding = 374px), or
+          the screen if that is narrower. Hidden until the image has actually been drawn. */}
       <div
-        ref={containerRef}
-        className="relative overflow-y-auto rounded-lg border border-accent-teal/30"
+        className="overflow-y-auto rounded-lg border border-accent-teal/30 w-full"
         style={{
-          width: '374px',
+          display: shown ? 'block' : 'none',
+          maxWidth: '374px',
           maxHeight: '480px',
           backgroundColor: '#1a1a2e',
           userSelect: 'none',
@@ -124,42 +108,62 @@ export default function SecureMarquee({ postId, onViewComplete }: SecureMarqueeP
         }}
         onContextMenu={blockInteraction}
       >
-        {/* The PNG strip */}
-        {stripUrl && (
-          <img
-            src={stripUrl}
-            alt=""
-            draggable={false}
+        {/* As tall as the image, so the glass pane inside it covers all of it */}
+        <div style={{ position: 'relative' }}>
+          {stripUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={stripUrl}
+              alt=""
+              draggable={false}
+              onDragStart={blockInteraction}
+              onLoad={() => {
+                shownRef.current = true;
+                setShown(true);
+              }}
+              onError={() => onUnavailable('The first look could not be displayed')}
+              style={{
+                display: 'block',
+                width: '100%',
+                pointerEvents: 'none',
+                WebkitTouchCallout: 'none',
+              }}
+            />
+          )}
+
+          {/* Glass-pane overlay — blocks right-click, long-press, drag */}
+          <div
+            aria-hidden="true"
+            onContextMenu={blockInteraction}
             onDragStart={blockInteraction}
-            style={{ display: 'block', width: '100%' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'transparent',
+              touchAction: 'pan-y',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              WebkitTouchCallout: 'none',
+              cursor: 'default',
+              zIndex: 10,
+            }}
           />
-        )}
-
-        {/* Scroll-end sentinel */}
-        <div ref={sentinelRef} style={{ height: 1 }} />
-
-        {/* Glass-pane overlay — blocks right-click, long-press, drag */}
-        <div
-          aria-hidden="true"
-          onContextMenu={blockInteraction}
-          onTouchStart={blockInteraction}
-          onDragStart={blockInteraction}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'transparent',
-            touchAction: 'none',
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            cursor: 'default',
-            zIndex: 10,
-          }}
-        />
+        </div>
       </div>
 
-      <div className="text-xs text-gray-500 font-mono mt-1">
-        Scroll to the end • View closes automatically
-      </div>
+      {shown && (
+        <>
+          <div className="text-xs text-gray-500 font-mono mt-1 text-center">
+            You can read this once. It closes when you tap Done or leave this page.
+          </div>
+          <button
+            onClick={handleDone}
+            className="px-6 py-2 border border-accent-teal text-accent-teal rounded-lg font-mono text-sm hover:bg-accent-teal/10 transition-colors"
+          >
+            Done reading
+          </button>
+        </>
+      )}
     </div>
   );
 }

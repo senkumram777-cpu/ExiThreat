@@ -1,12 +1,22 @@
 import { Router, Response } from 'express';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { getPostWeightage, recalculateTotalWeight } from '../services/weightageService';
+import { postAccessById, NOT_IN_GROUP } from '../services/accessService';
 
 const router = Router();
 
 // GET /api/weightage/:postId — fetch aggregated weightage + full history
 router.get('/:postId', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const { postId } = req.params;
+  const access = await postAccessById(postId, req.userId!);
+  if (!access) {
+    res.status(404).json({ error: 'Post not found' });
+    return;
+  }
+  if (!access.canRead) {
+    res.status(403).json({ error: NOT_IN_GROUP });
+    return;
+  }
   const result = await getPostWeightage(postId);
   if (!result) {
     res.status(404).json({ error: 'Post not found' });

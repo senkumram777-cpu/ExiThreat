@@ -3,7 +3,7 @@
  * Converts raw text content into a PNG "Paper Strip" image.
  *
  * The strip is:
- *  - Exactly 25 characters wide (monospace font)
+ *  - At most 25 characters wide (monospace font), broken between words
  *  - Vertically as tall as needed for the full text
  *  - Returned as a PNG Buffer that the frontend streams into an <img> tag
  *
@@ -20,33 +20,45 @@ const PADDING = 12;          // px top/bottom padding
 const FONT_SIZE = 14;
 const BG_COLOR = '#1a1a2e';  // dark navy
 const TEXT_COLOR = '#e0e0e0';
-const FONT_FAMILY = 'Courier New, Courier, monospace';
+// The server image installs DejaVu (Latin) and Noto (Tamil, Devanagari); see the Dockerfile.
+// Without an installed font the strip comes out blank.
+const FONT_FAMILY = 'DejaVu Sans Mono, Courier New, Courier, monospace';
 
 /**
- * Wraps text into lines of at most CHARS_PER_LINE characters,
- * respecting existing newlines.
+ * Wraps text into lines of at most CHARS_PER_LINE characters, respecting existing newlines.
+ * Lines break between words; only a word longer than a line is cut. Characters are counted
+ * as code points so that a character outside the basic plane is never split in two.
  */
 function wrapText(text: string): string[] {
   const lines: string[] = [];
-  for (const paragraph of text.split('\n')) {
-    if (paragraph.length === 0) {
-      lines.push('');
-      continue;
+  for (const paragraph of text.split(/\r?\n/)) {
+    let line: string[] = [];
+    for (const word of paragraph.split(/[ \t]+/)) {
+      let chars = Array.from(word);
+      if (chars.length === 0) continue;
+      if (line.length > 0 && line.length + 1 + chars.length > CHARS_PER_LINE) {
+        lines.push(line.join(''));
+        line = [];
+      }
+      while (chars.length > CHARS_PER_LINE) {
+        lines.push(chars.slice(0, CHARS_PER_LINE).join(''));
+        chars = chars.slice(CHARS_PER_LINE);
+      }
+      line = line.length > 0 ? [...line, ' ', ...chars] : chars;
     }
-    let remaining = paragraph;
-    while (remaining.length > 0) {
-      lines.push(remaining.slice(0, CHARS_PER_LINE));
-      remaining = remaining.slice(CHARS_PER_LINE);
-    }
+    lines.push(line.join(''));
   }
   return lines;
 }
 
 /**
- * Escapes characters that would break inline SVG text nodes.
+ * Escapes characters that would break inline SVG text nodes, and drops control characters,
+ * which are not allowed in XML at all.
  */
 function escapeSvg(str: string): string {
   return str
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

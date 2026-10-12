@@ -12,7 +12,10 @@ RUN npm run build
 
 FROM node:20-alpine
 # Prisma's engines need OpenSSL, which the alpine image does not ship.
-RUN apk add --no-cache openssl
+# The first-look strip (services/imageService.ts) is text drawn with the system's fonts, and
+# alpine ships none: DejaVu covers Latin text, Noto covers Tamil and Devanagari.
+RUN apk add --no-cache openssl fontconfig font-dejavu font-noto-tamil font-noto-devanagari \
+    && fc-cache -f
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev

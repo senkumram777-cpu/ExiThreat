@@ -31,13 +31,19 @@ alerts and live streams.
 1. **Account.** Register with a username and password; no email or phone is asked for.
    Passwords are hashed with bcrypt, and sign-in returns a token valid for 7 days.
 2. **Groups.** Users create or join groups. Each group has its own chat, which never leaves it.
+   Only members can read a group's posts, chat and member names; everyone else sees its name
+   and counts.
 3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
    server makes a redacted copy, replacing emails, phone numbers, names, addresses, URLs, dates
    and ID numbers with labels such as `[NAME REDACTED]`, and places the post in a random group.
-4. **First look.** A member of the post's current group can see the unredacted text exactly
-   once, served as an image strip rather than text. Afterwards only the redacted version is
-   available. The browser remembers what it has shown (RxDB), and the server keeps an audit
-   record.
+   A post, its comments, votes and weightage can be read only by members of the group it is
+   in now and by its author. Nobody is told who the author is; the author's own page says
+   "Your Post".
+4. **First look.** A member of the post's current group can see the unredacted text once,
+   served as an image strip rather than text. The look ends when the reader taps "Done
+   reading" or leaves the page; afterwards only the redacted version is available. The server
+   keeps the record, so it is the same on every device. A look that was opened but never
+   closed (lost connection) can be reopened for 10 minutes.
 5. **Push.** Members of the current group vote to push the post on. The author cannot vote on
    their own post, and a vote can be withdrawn.
 6. **Move.** Every 10 seconds the server checks the votes. At 50% of a group's members, the post
@@ -69,7 +75,7 @@ All routes are under `/api` and, except register and login, need `Authorization:
 | `POST /auth/register`, `POST /auth/login` | Account |
 | `GET /groups`, `GET /groups/:id`, `POST /groups`, `POST /groups/:id/join`, `POST /groups/:id/heartbeat` | Groups and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
-| `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip` | Create a post, read it, the one-time image strip |
+| `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |
@@ -218,7 +224,12 @@ These public servers are meant for light use.
 ## Security notes
 
 - The unredacted text of a post is never sent as text; it is rendered to an image on the
-  server and served once per member.
+  server and served once per member. This slows copying down; it cannot stop a screenshot. The
+  text is not encrypted in the database.
+- Reading is limited to a group's members, but anyone signed in can still join or create a
+  group, so membership is not yet a real barrier.
+- The strip is drawn with fonts installed in the backend's image (`backend/Dockerfile`):
+  DejaVu for Latin text, Noto for Tamil and Devanagari. Other scripts need their font added.
 - Sign-in tokens are kept in the browser's local storage. The officer's session is kept in
   session storage and ends when the tab is closed.
 - The ProMic service-account key gives the backend wide access to ProMic's data. Keep it out of

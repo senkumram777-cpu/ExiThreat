@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { recalculateGroupTrustScore } from '../services/weightageService';
+import { isGroupMember } from '../services/accessService';
 
 const router = Router();
 
@@ -20,31 +21,52 @@ router.get('/', requireAuth, async (_req: AuthRequest, res: Response): Promise<v
   res.json(groups);
 });
 
-// GET /api/groups/:id — group detail + members + current posts
+// GET /api/groups/:id — group detail. Anyone signed in gets the summary (they need it to
+// decide whether to join); the member names and the current posts are for members only.
 router.get('/:id', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const group = await prisma.group.findUnique({
+  const summary = await prisma.group.findUnique({
     where: { id },
-    include: {
-      members: {
-        include: { user: { select: { id: true, username: true } } },
-      },
-      currentPosts: {
-        select: {
-          id: true,
-          redactedContent: true,
-          totalWeight: true,
-          createdAt: true,
-          _count: { select: { pushVotes: true, comments: true } },
-        },
-      },
+    select: {
+      id: true,
+      name: true,
+      trustScore: true,
+      createdAt: true,
+      _count: { select: { members: true, currentPosts: true } },
     },
   });
-  if (!group) {
+  if (!summary) {
     res.status(404).json({ error: 'Group not found' });
     return;
   }
-  res.json(group);
+
+  if (!(await isGroupMember(id, req.userId!))) {
+    res.json({ ...summary, isMember: false, members: [], currentPosts: [] });
+    return;
+  }
+
+  const [members, currentPosts] = await Promise.all([
+    prisma.groupMember.findMany({
+      where: { groupId: id },
+      select: { user: { select: { username: true } } },
+    }),
+    prisma.post.findMany({
+      where: { currentGroupId: id },
+      select: {
+        id: true,
+        redactedContent: true,
+        totalWeight: true,
+        createdAt: true,
+        _count: { select: { pushVotes: true, comments: true } },
+      },
+    }),
+  ]);
+  res.json({
+    ...summary,
+    isMember: true,
+    members: members.map((m) => ({ username: m.user.username })),
+    currentPosts,
+  });
 });
 
 // POST /api/groups — create a new group (admin / seeding)
@@ -109,6 +131,10 @@ router.post('/:id/heartbeat', requireAuth, async (req: AuthRequest, res: Respons
 // GET /api/groups/:id/chat — fetch group-local chat messages
 router.get('/:id/chat', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
+  if (!(await isGroupMember(id, req.userId!))) {
+    res.status(403).json({ error: 'Not a member of this group' });
+    return;
+  }
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const messages = await prisma.chatMessage.findMany({
     where: { groupId: id },
