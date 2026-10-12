@@ -16,13 +16,19 @@ alerts and live streams.
 | Officer sign in | https://exithreat.fly.dev/law-enforcement |
 | Local | website http://localhost:3000, API http://localhost:4000/api |
 
+Current work is on the branch `feature/promic-backups`; the hosted site is deployed from it.
+
 ## Repository layout
 
 | Path | What it is |
 |---|---|
 | `frontend/` | Next.js 14 (App Router), React 18, Tailwind, next-pwa |
+| `frontend/public/` | Web app manifest and icons. The service worker files are built, not kept in git |
 | `backend/` | Express API in TypeScript, Prisma, PostgreSQL, JWT auth |
-| `backend/prisma/schema.prisma` | Database schema |
+| `backend/prisma/schema.prisma`, `backend/prisma/migrations/` | Database schema and its history |
+| `backend/src/tests/` | Unit tests and the API test |
+| `backend/scripts/start.js` | Hosted start-up: apply migrations, then start the API |
+| `.github/workflows/ci.yml` | Tests and builds on every push |
 | `docker-compose.yml` | Postgres, backend and frontend together |
 | `frontend/fly.toml`, `backend/fly.toml` | Fly.io hosting |
 
@@ -66,6 +72,15 @@ alerts and live streams.
 8. **Weightage.** A post's weight is the sum of the vote percentages from the groups it left by
    vote. Each group counts once, with at most 100, so going round the same groups adds nothing.
 9. **Comments** travel with a post from group to group. Group chat does not.
+
+### Installing it as an app
+
+The site can be installed from the browser ("Install app" or "Add to Home screen"). A service
+worker (`frontend/src/components/ServiceWorker.tsx` registers the one next-pwa builds) keeps
+the pages and scripts on the device, so the app opens without a connection and shows an
+"offline" page instead of the browser's error. It keeps no answers from the API: groups,
+posts and the first-look image always come from the server. There is no service worker when
+running `npm run dev`.
 
 ### Pages
 
@@ -130,7 +145,8 @@ Files: `frontend/src/app/law-enforcement/page.tsx` (sign in and recording access
 ### Recording access
 1. Sign in with the emailed email and password.
 2. Enter the ProMic user's mobile number.
-3. Enter the 6-digit code that user sees in their ProMic app. They can refuse.
+3. Enter the 6-digit code that user sees in their ProMic app. They can refuse. The app names
+   the officer's branch (station or unit), never their email.
 4. Enter the second 6-digit code emailed to the officer.
 5. Play that user's most recent audio backup, listen-only, for 30 minutes.
 
@@ -146,20 +162,36 @@ Shown on the Request Access screen after sign in.
   where it is the nearest station), the entire district, or the entire state. It can be changed
   at any time.
 - **AI Alerts.** AI threat and SOS alerts from the last 24 hours in that area, grouped by user
-  with name, mobile number and GPS position. Clicking shows the location on the map. A blinking
-  green dot marks a user who is live streaming; if they shared the stream with law enforcement,
-  clicking jumps to them in the live list. "Download CSV" saves the current list.
+  with name, mobile number and GPS position. An SOS shows "active now" while it is running and
+  the time it ended afterwards. Clicking shows the location on the map. A blinking green dot
+  marks a user who is live streaming; if they shared the stream with law enforcement, clicking
+  jumps to them in the live list. "Download CSV" saves the whole list.
 - **Live Streaming.** Users in the area who ticked "Law Enforcement" in ProMic when starting
-  their stream. Click **Listen** to hear it.
+  their stream. Click **Listen** to hear it; while an officer listens, the user's app shows
+  "Law enforcement is listening". An officer can stop their own listening but never the stream.
+- **Only police listening.** A stream is marked when no Connected User of that person is
+  listening to it, so the officer knows nobody else is.
+- **Remote area, weak signal, connection lost.** Badges on alerts and streams. "Remote area"
+  means OpenStreetMap names no village, town or city at that point. "Weak signal" comes from
+  the phone itself. "Connection lost" appears when the phone has reported nothing for 90
+  seconds, with its last known position and the time of it.
+- **Are you OK? and talk-back.** While listening, the officer can ask the user "Are you OK?".
+  The user answers in the app with their passcode ("I'm safe" or "Send help", which starts an
+  SOS). With no answer in 15 seconds the officer can speak through the user's phone.
+- **Filters.** Alerts: All, Active SOS, Ended SOS, AI threats, Remote area. Live streams: All,
+  Only police listening, With other listeners, Remote area, Weak or lost signal. Filters change
+  only what is listed; the map and the CSV keep everything.
 
-The lists refresh every 15 seconds. Which users fall in an officer's area is decided by ProMic's
-backend, not by this page.
+The lists refresh every 15 seconds. Which users fall in an officer's area, and every badge
+above, is decided by ProMic's backend, not by this page.
 
 ### How live playback works
 `liveAudio.ts` connects to ProMic's relay over WebSocket and decrypts each frame in the browser
 with the Web Crypto API, using a session key ProMic hands over only for a shared stream. It
 must stay in step with ProMic's formats: a 60-byte frame header, then
-`IV(12) || ciphertext || tag(16)` holding 16 kHz mono 16-bit PCM.
+`IV(12) || ciphertext || tag(16)` holding 16 kHz mono 16-bit PCM. Talk-back sends the
+officer's microphone the other way in the same frame format, and the relay passes it to the
+user's phone only.
 
 ## Running locally
 
@@ -199,6 +231,8 @@ Backend (`backend/.env`, not in git):
 | `TRUST_PROXY` | Set to `1` behind a hosting proxy so rate limits apply per visitor |
 | `PROMIC_DATABASE_URL`, `PROMIC_STORAGE_BUCKET` | ProMic's Firebase project (optional) |
 | `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key (optional). Never commit it |
+| `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25) |
+| `REGISTER_LIMIT_PER_DAY`, `LOGIN_ATTEMPTS` | Accounts per network address a day, and wrong passwords per 15 minutes (optional; 5 and 10) |
 
 Frontend (`frontend/.env.local`, or build arguments):
 
@@ -243,12 +277,13 @@ Do not use `prisma db push` any more: it changes tables without leaving a migrat
 | `exithreat-db` | Fly Postgres, attached to `exithreat-api` as `DATABASE_URL` |
 
 ```bash
-cd backend  && fly deploy --ha=false
+cd backend  && fly deploy --ha=false     # first: the website may need the new API
 cd frontend && fly deploy --ha=false
 ```
 
 Secrets on `exithreat-api` (`fly secrets set`): `JWT_SECRET`, `PROMIC_SERVICE_ACCOUNT_JSON`.
 The backend image applies any new migrations each time it starts, then starts the API.
+`GET /api/health` also asks the database, so Fly's check fails if the API cannot reach it.
 
 ## Maps
 
@@ -265,9 +300,9 @@ These public servers are meant for light use.
   (`backend/src/services/groupService.ts`). Someone who opens many accounts still ends up in
   many groups: accounts need no email or phone, and the limit per network address only slows
   this down.
-- The group sizes can be changed with `GROUP_MIN_MEMBERS` and `GROUP_MAX_MEMBERS` on the
-  backend (`fly secrets set` or `[env]` in `backend/fly.toml`), and the sign-up limit with
-  `REGISTER_LIMIT_PER_DAY`.
+- For a trial with only a few accounts, lower `GROUP_MIN_MEMBERS` on the backend
+  (`fly secrets set` or `[env]` in `backend/fly.toml`). Smaller groups are easier to fill
+  with one person's accounts, so put it back before real use.
 - The strip is drawn with fonts installed in the backend's image (`backend/Dockerfile`):
   DejaVu for Latin text, Noto for Tamil and Devanagari. Other scripts need their font added.
 - Sign-in tokens are kept in the browser's local storage, where a script injected into the
@@ -288,8 +323,9 @@ These public servers are meant for light use.
 
 ## Known limitations
 
-- The group trust score formula exists (`weightageService.ts`) but nothing calls it yet, so
-  scores stay at 0.
+- The group trust score (`weightageService.ts`: how many members read posts through and how
+  active they are) is recalculated as members use their group and is shown on the group
+  pages, but nothing depends on it.
 - There is no admin role in ExiThreat, and no way to leave or change group.
 - A forgotten password cannot be recovered, and an account cannot be deleted by its owner.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
@@ -303,8 +339,11 @@ These public servers are meant for light use.
 - The author is not notified when a post moves or gets a comment; "Mine" shows the current
   counts.
 - The move to the next group runs by polling every 10 seconds.
-- Live listening and the officer map have been checked against ProMic's backend but not yet
-  clicked through end to end in a browser.
+- The officer page's lists, badges and filters have been checked in a browser against
+  ProMic's backend. Live listening and talk-back have been checked against ProMic's formats
+  but not yet clicked through end to end with a real stream.
+- The whole ExiThreat flow (sign-up, groups, posting, first look, voting) is covered by the
+  tests on a local copy; on the hosted site it has not been tried with real accounts.
 
 ## Related project
 
