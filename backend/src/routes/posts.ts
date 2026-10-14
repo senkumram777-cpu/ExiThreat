@@ -19,6 +19,14 @@ function firstLookOpen(record: { viewedAt: Date; completedAt: Date | null } | nu
   return !record.completedAt && Date.now() - record.viewedAt.getTime() < FIRST_LOOK_WINDOW_MS;
 }
 
+// The latest group a post left, which is when it reached the one it is in now.
+const LAST_MOVE = { orderBy: { movedAt: 'desc' as const }, take: 1, select: { movedAt: true } };
+
+/** When a post reached the group it is in: its last move, or its creation if it never moved. */
+function arrivedAt(post: { createdAt: Date }, lastMove: Array<{ movedAt: Date }>): Date {
+  return lastMove[0]?.movedAt ?? post.createdAt;
+}
+
 // POST /api/posts — create a new post (OC submits complaint)
 router.post('/', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.userId!;
@@ -82,9 +90,10 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
       createdAt: true,
       lastManualPushAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
+      history: LAST_MOVE,
     },
   });
-  res.json(posts);
+  res.json(posts.map(({ history, ...post }) => ({ ...post, arrivedAt: arrivedAt(post, history) })));
 }));
 
 // GET /api/posts/:id/strip — serves the PNG paper strip (unredacted, first-look only)
@@ -175,7 +184,8 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       currentGroupId: true,
       ocUserId: true,
       lastManualPushAt: true,
-      _count: { select: { pushVotes: true, comments: true } },
+      _count: { select: { pushVotes: true, comments: true, history: true } },
+      history: LAST_MOVE,
     },
   });
   if (!post) {
@@ -198,8 +208,18 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
     if (firstLookOpen(record)) firstLook = 'available';
   }
 
-  const { ocUserId: _author, ...rest } = post;
-  res.json({ ...rest, isAuthor: access.isAuthor, isMember: access.isMember, firstLook });
+  const { ocUserId: _author, history, _count, ...rest } = post;
+  res.json({
+    ...rest,
+    _count: { pushVotes: _count.pushVotes, comments: _count.comments },
+    isAuthor: access.isAuthor,
+    isMember: access.isMember,
+    firstLook,
+    // Only the author is told how far the post has travelled and since when it is where it is.
+    ...(access.isAuthor
+      ? { journey: { groupsPassed: _count.history, arrivedAt: arrivedAt(post, history) } }
+      : {}),
+  });
 }));
 
 // GET /api/posts/:id/comments — fetch all tagged comments (travel with post)

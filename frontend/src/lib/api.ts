@@ -28,6 +28,16 @@ export interface Post {
   firstLook: 'available' | 'used';
   lastManualPushAt: string | null;
   _count: { pushVotes: number; comments: number };
+  /** Sent to the author only. */
+  journey?: PostJourney;
+}
+
+/** How far a post has travelled. */
+export interface PostJourney {
+  /** The number of groups it has left so far. */
+  groupsPassed: number;
+  /** When it reached the group it is in now. */
+  arrivedAt: string;
 }
 
 /** One of the signed-in user's own posts, as listed under "My Disclosures". */
@@ -39,6 +49,8 @@ export interface MyPost {
   lastManualPushAt: string | null;
   /** `history` is the number of groups the post has left so far. */
   _count: { pushVotes: number; comments: number; history: number };
+  /** When it reached the group it is in now. */
+  arrivedAt: string;
 }
 
 export interface Comment {
@@ -79,6 +91,8 @@ export interface PushStatus {
   totalMembers: number;
   pushPercentage: number;
   thresholdReached: boolean;
+  /** In the answer to a vote: that vote moved the post on, out of the voter's group. */
+  moved?: boolean;
 }
 
 export interface WeightageResult {

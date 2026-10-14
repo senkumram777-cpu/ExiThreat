@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
-import { startPushObserver } from './services/pushObserver';
+import { startPushSweep } from './services/pushSweep';
 import authRouter from './routes/auth';
 import postsRouter from './routes/posts';
 import groupsRouter from './routes/groups';
@@ -88,7 +88,7 @@ app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Something went wrong. Please try again.' });
 });
 
-// A failure outside a request (the push observer catches its own) is logged, not fatal.
+// A failure outside a request (the push sweep catches its own) is logged, not fatal.
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', reason);
 });
@@ -96,7 +96,7 @@ process.on('unhandledRejection', (reason) => {
 // ── Start ──────────────────────────────────────────────────────────────────
 async function main() {
   await prisma.$connect();
-  startPushObserver();
+  startPushSweep();
   app.listen(PORT, () => {
     console.log(`ExiThreat backend running on port ${PORT}`);
   });

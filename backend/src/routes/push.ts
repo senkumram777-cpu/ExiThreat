@@ -3,7 +3,7 @@ import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { postAccess, NOT_IN_GROUP } from '../services/accessService';
-import { movePost, pickGroupForPost, touchMember, voteTally } from '../services/groupService';
+import { movePost, pickGroupForPost, pushIfReady, touchMember, voteTally } from '../services/groupService';
 
 const router = Router();
 
@@ -54,7 +54,10 @@ router.post('/:postId/vote', requireAuth, handle(async (req: AuthRequest, res: R
 
   await touchMember(post.currentGroupId, userId);
 
-  res.json({ hasVoted: true, hasRead: true, ...(await voteTally(post)) });
+  // The vote that reaches the threshold moves the post here and now. `moved` tells the voter
+  // that it has left their group, so they can no longer open it.
+  const { tally, outcome } = await pushIfReady(post);
+  res.json({ hasVoted: true, hasRead: true, ...tally, moved: outcome === 'moved' });
 }));
 
 // DELETE /api/push/:postId/vote — retract a vote

@@ -62,13 +62,17 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    closed (lost connection) can be reopened for 10 minutes.
 5. **Push.** Members of the current group vote to push the post on, once they have opened its
    first look. The author cannot vote on their own post, and a vote can be withdrawn.
-6. **Move.** Every 10 seconds the server checks the votes. They are measured against the
-   members who used the group in the last 14 days (never against fewer than 5). At 50%, the
-   post moves to another random group of at least 5 members that the author is not in,
-   preferring groups it has not been through; the vote percentage is saved to its history and
-   voting starts again.
+6. **Move.** The votes are counted as each one is cast, against the members who used the
+   group in the last 14 days (never against fewer than 5). The vote that brings them to 50%
+   moves the post at once to another random group of at least 5 members that the author is
+   not in, preferring groups it has not been through; the vote percentage is saved to its
+   history, voting starts again, and the voter is told the post has left their group. If no
+   group can take it, it waits and moves as soon as one reaches 5 members. An hourly sweep
+   catches what no vote announces, such as members going inactive.
 7. **Manual push.** The author may move their own post once every 24 hours. It clears the
    current votes and adds nothing to the post's weight.
+   The author sees, on the post and under "Mine", how many groups it has passed through
+   and when it arrived in its current one, but not which groups.
 8. **Weightage.** A post's weight is the sum of the vote percentages from the groups it left by
    vote. Each group counts once, with at most 100, so going round the same groups adds nothing.
 9. **Comments** travel with a post from group to group. Group chat does not.
@@ -273,7 +277,7 @@ Do not use `prisma db push` any more: it changes tables without leaving a migrat
 | App | Role |
 |---|---|
 | `exithreat` | Website (`frontend/fly.toml`). Sleeps when idle and wakes on the first request |
-| `exithreat-api` | API (`backend/fly.toml`). Kept running, because the push observer polls votes |
+| `exithreat-api` | API (`backend/fly.toml`). Kept running: the hourly push sweep and the live pages need it awake |
 | `exithreat-db` | Fly Postgres, attached to `exithreat-api` as `DATABASE_URL` |
 
 ```bash
@@ -338,7 +342,6 @@ These public servers are meant for light use.
   privacy policy on the site yet.
 - The author is not notified when a post moves or gets a comment; "Mine" shows the current
   counts.
-- The move to the next group runs by polling every 10 seconds.
 - The officer page's lists, badges and filters have been checked in a browser against
   ProMic's backend. Live listening and talk-back have been checked against ProMic's formats
   but not yet clicked through end to end with a real stream.

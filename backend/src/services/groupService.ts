@@ -93,6 +93,10 @@ export async function ensureGroup(userId: string): Promise<string> {
     create: { groupId, userId, lastSeenAt: new Date() },
     update: {},
   });
+
+  // This member may be the one that makes the group big enough to receive posts. Posts that
+  // have their votes but had nowhere to go can move now. Signing in does not wait for it.
+  if ((sizes.get(groupId) ?? 0) + 1 === GROUP_MIN_MEMBERS) void sweepPushes();
   return groupId;
 }
 
@@ -163,6 +167,73 @@ export async function voteTally(post: { id: string; currentGroupId: string; ocUs
     pushPercentage: share * 100,
     thresholdReached: share >= PUSH_THRESHOLD,
   };
+}
+
+/** `moved`: it left the group. `waiting`: it has the votes but no group can take it yet. */
+export type PushOutcome = 'moved' | 'waiting' | 'below';
+
+/**
+ * Counts a post's votes and, if they have reached the threshold, moves it to its next group.
+ * Called when a vote is cast, and by sweepPushes for the cases no vote announces.
+ */
+export async function pushIfReady(
+  post: { id: string; currentGroupId: string; ocUserId: string },
+): Promise<{ tally: VoteTally; outcome: PushOutcome }> {
+  const tally = await voteTally(post);
+  if (!tally.thresholdReached) return { tally, outcome: 'below' };
+
+  const toGroupId = await pickGroupForPost(post.ocUserId, post);
+  if (!toGroupId) return { tally, outcome: 'waiting' };
+
+  // False means another request moved it in the meantime: it has left this group either way.
+  if (await movePost(post.id, post.currentGroupId, toGroupId, tally.pushPercentage, false)) {
+    console.log(`Post ${post.id} moved on with ${tally.pushPercentage.toFixed(1)}% of the votes`);
+  }
+  return { tally, outcome: 'moved' };
+}
+
+let sweeping = false;
+let sweepAgain = false;
+
+/**
+ * Checks every post that has votes. A vote is checked as it is cast, so this is only for what
+ * changes without one: members going inactive (fewer votes are then needed), a group becoming
+ * big enough to take a post that was waiting, and a server that stopped between a vote and
+ * the move. Returns how many posts it moved.
+ */
+export async function sweepPushes(): Promise<number> {
+  // One at a time. A request that arrives during a sweep makes it run once more afterwards,
+  // so that posts it had already passed are looked at again.
+  if (sweeping) {
+    sweepAgain = true;
+    return 0;
+  }
+  sweeping = true;
+  let moved = 0;
+  try {
+    do {
+      sweepAgain = false;
+      const voted = await prisma.pushVote.groupBy({ by: ['postId', 'groupId'] });
+      for (const { postId, groupId } of voted) {
+        const post = await prisma.post.findUnique({
+          where: { id: postId },
+          select: { id: true, currentGroupId: true, ocUserId: true },
+        });
+        if (!post) continue;
+        if (post.currentGroupId !== groupId) {
+          // A vote that arrived just as the post left that group.
+          await prisma.pushVote.deleteMany({ where: { postId, groupId } });
+          continue;
+        }
+        if ((await pushIfReady(post)).outcome === 'moved') moved++;
+      }
+    } while (sweepAgain);
+  } catch (err) {
+    console.error('Push sweep failed:', err);
+  } finally {
+    sweeping = false;
+  }
+  return moved;
 }
 
 /**

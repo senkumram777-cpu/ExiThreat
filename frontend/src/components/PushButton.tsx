@@ -7,9 +7,13 @@ interface PushButtonProps {
   postId: string;
   isOC: boolean; // OC cannot vote
   firstLookOpen: boolean; // the reader votes after closing the first look
+  onMoved?: () => void; // the post has left the reader's group
 }
 
-export default function PushButton({ postId, isOC, firstLookOpen }: PushButtonProps) {
+// What the server answers once the post is with another group.
+const NOT_IN_GROUP = "Not a member of this post's current group";
+
+export default function PushButton({ postId, isOC, firstLookOpen, onMoved }: PushButtonProps) {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -20,11 +24,14 @@ export default function PushButton({ postId, isOC, firstLookOpen }: PushButtonPr
       const s = await pushApi.status(postId);
       setStatus(s);
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      // Someone else's vote moved it on while this page was open.
+      if (message === NOT_IN_GROUP) onMoved?.();
+      else setError(message);
     } finally {
       setLoading(false);
     }
-  }, [postId]);
+  }, [postId, onMoved]);
 
   useEffect(() => {
     loadStatus();
@@ -44,12 +51,15 @@ export default function PushButton({ postId, isOC, firstLookOpen }: PushButtonPr
       } else {
         const updated = await pushApi.vote(postId);
         setStatus(updated);
+        if (updated.moved) onMoved?.();
         setActing(false);
         return;
       }
       await loadStatus();
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      if (message === NOT_IN_GROUP) onMoved?.();
+      else setError(message);
     } finally {
       setActing(false);
     }
@@ -117,7 +127,7 @@ export default function PushButton({ postId, isOC, firstLookOpen }: PushButtonPr
 
       {status?.thresholdReached && (
         <div className="text-center text-xs font-mono text-green-400 animate-pulse">
-          Threshold reached — content will move shortly
+          Enough votes — it moves on as soon as another group can take it
         </div>
       )}
 

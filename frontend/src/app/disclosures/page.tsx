@@ -68,6 +68,10 @@ export default function DisclosuresPage() {
               <span>
                 {post._count.history} group{post._count.history !== 1 ? 's' : ''} passed
               </span>
+              <span>
+                in its current group since{' '}
+                {new Date(post.arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+              </span>
               <span>▲ {post._count.pushVotes} votes now</span>
               <span>💬 {post._count.comments}</span>
               <span>{new Date(post.createdAt).toLocaleDateString()}</span>
