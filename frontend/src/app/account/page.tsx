@@ -92,8 +92,8 @@ export default function AccountPage() {
       <form onSubmit={handleChangePassword} className="flex flex-col gap-3">
         <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest">Change password</h2>
         <p className="text-xs font-mono text-gray-500 leading-relaxed">
-          There is no password reset: no email or phone number is kept. If you forget your
-          password, the account cannot be recovered.
+          Forgot it? Sign out and use &quot;Forgot password?&quot; on the sign-in page: a code is
+          sent to your email address or mobile number.
         </p>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Current password

@@ -13,6 +13,17 @@ export interface AuthResponse {
   token: string;
   userId: string;
   username: string;
+  /** An older account without its email and mobile number: it must add them first. */
+  needsContact?: boolean;
+}
+
+export type ContactChannel = 'email' | 'phone';
+
+export interface Me {
+  userId: string;
+  username: string;
+  hasEmail: boolean;
+  hasPhone: boolean;
 }
 
 export interface Post {
@@ -176,7 +187,7 @@ async function req<T>(
   if (binary && res.ok) return res.blob() as unknown as T;
 
   // Errors are JSON with an `error` message, but a proxy in between may answer in plain text.
-  let data: { error?: string } | null = null;
+  let data: { error?: string; code?: string } | null = null;
   try {
     data = await res.json();
   } catch {
@@ -194,6 +205,14 @@ async function req<T>(
     throw new Error('You have been signed out. Please sign in again.');
   }
 
+  // An older account that has not added its email and mobile number yet.
+  if (res.status === 403 && data?.code === 'CONTACT_REQUIRED') {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/account/contact') {
+      window.location.assign('/account/contact');
+    }
+    throw new Error(data.error ?? 'Add your email address and mobile number to continue.');
+  }
+
   if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
   return data as T;
 }
@@ -201,10 +220,29 @@ async function req<T>(
 // ── Auth ──────────────────────────────────────────────────────────────────
 
 export const auth = {
-  register: (username: string, password: string) =>
-    req<AuthResponse>('POST', '/auth/register', { username, password }),
-  login: (username: string, password: string) =>
-    req<AuthResponse>('POST', '/auth/login', { username, password }),
+  /** Sends a 6-digit code to an email address (mobile numbers: lib/firebasePhone.ts). */
+  verifyStart: (channel: ContactChannel, value: string) =>
+    req<{ verificationId: string; expiresInSeconds: number; resendInSeconds: number }>(
+      'POST', '/auth/verify/start', { channel, value }),
+  /** A mobile number confirmed by Firebase: its ID token, exchanged for a confirmation id. */
+  verifyPhone: (idToken: string) => req<{ verificationId: string }>('POST', '/auth/verify/phone', { idToken }),
+  verifyCheck: (verificationId: string, code: string) =>
+    req<{ verified: boolean }>('POST', '/auth/verify/check', { verificationId, code }),
+  register: (username: string, password: string, emailVerificationId: string, phoneVerificationId: string) =>
+    req<AuthResponse>('POST', '/auth/register', { username, password, emailVerificationId, phoneVerificationId }),
+  /** `identifier` is the username, email address or mobile number. */
+  login: (identifier: string, password: string) =>
+    req<AuthResponse>('POST', '/auth/login', { identifier, password }),
+  me: () => req<Me>('GET', '/auth/me'),
+  /** For an older account: adds the email and/or mobile number it lacks. */
+  addContact: (emailVerificationId: string | null, phoneVerificationId: string | null) =>
+    req<AuthResponse>('POST', '/auth/contact', {
+      ...(emailVerificationId ? { emailVerificationId } : {}),
+      ...(phoneVerificationId ? { phoneVerificationId } : {}),
+    }),
+  /** A new password, proved with a code to the account's email or mobile. Signs out everywhere else. */
+  reset: (channel: ContactChannel, verificationId: string, newPassword: string) =>
+    req<AuthResponse>('POST', '/auth/reset', { channel, verificationId, newPassword }),
   /** Returns a new token; tokens on every other device stop working. */
   changePassword: (currentPassword: string, newPassword: string) =>
     req<AuthResponse>('POST', '/auth/password', { currentPassword, newPassword }),

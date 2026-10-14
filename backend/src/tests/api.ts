@@ -1,7 +1,7 @@
 /**
  * API test: starts the real server against an empty, throwaway PostgreSQL schema and walks
  * through the rules that matter: who can read what, the first look, voting and moving, and
- * the account limits. Run with `npm run test:api`.
+ * the accounts: one per email address and mobile number, sign-in and password reset. Run with `npm run test:api`.
  *
  * Needs DATABASE_URL to point at a PostgreSQL server it may create a schema on (the local
  * development database is fine: it works in a schema of its own and removes it afterwards).
@@ -10,6 +10,7 @@
 
 import { spawn, spawnSync } from 'child_process';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -35,6 +36,14 @@ const env = {
   GROUP_MAX_MEMBERS: '2',
   REGISTER_LIMIT_PER_DAY: '1000',
   LOGIN_ATTEMPTS: '3',
+  CODE_SENDS_PER_HOUR: '1000',
+  CODE_RESEND_SECONDS: '2',
+  // No Gmail account: the server prints each email code, and the test reads it there.
+  GMAIL_USER: '',
+  GMAIL_APP_PASSWORD: '',
+  // Mobile numbers are confirmed with "test-phone:<number>" instead of a Firebase token.
+  PHONE_TOKEN_TEST: '1',
+  NODE_ENV: 'test',
 };
 const prisma = new PrismaClient({ datasources: { db: { url: testUrl } } });
 
@@ -76,12 +85,154 @@ interface TestUser {
   username: string;
 }
 
+// Codes the server printed, by verification id.
+const codes = new Map<string, string>();
+
+async function codeFor(verificationId: string): Promise<string> {
+  for (let i = 0; i < 50 && !codes.has(verificationId); i++) await sleep(50);
+  const code = codes.get(verificationId);
+  if (!code) throw new Error(`No code was printed for ${verificationId}`);
+  return code;
+}
+
+/** Confirms an email (code) or mobile number (test token); returns the verification id. */
+async function confirm(channel: 'email' | 'phone', value: string): Promise<string> {
+  if (channel === 'phone') {
+    const r = await call('POST', '/auth/verify/phone', undefined, { idToken: `test-phone:${value}` });
+    if (r.status !== 200) throw new Error(`verify/phone ${value}: ${JSON.stringify(r.data)}`);
+    return r.data.verificationId;
+  }
+  const started = await call('POST', '/auth/verify/start', undefined, { channel, value });
+  if (started.status !== 200) throw new Error(`verify/start ${value}: ${JSON.stringify(started.data)}`);
+  const { verificationId } = started.data;
+  await call('POST', '/auth/verify/check', undefined, { verificationId, code: await codeFor(verificationId) });
+  return verificationId;
+}
+
+let nextContact = 0;
+/** A fresh email address and mobile number for each test account. */
+function newContact(): { email: string; phone: string } {
+  nextContact++;
+  return { email: `person${nextContact}@example.com`, phone: `98${String(nextContact).padStart(8, '0')}` };
+}
+
+async function registerWith(username: string, email: string, phone: string): Promise<Reply> {
+  return call('POST', '/auth/register', undefined, {
+    username,
+    password: PASSWORD,
+    emailVerificationId: await confirm('email', email),
+    phoneVerificationId: await confirm('phone', phone),
+  });
+}
+
 async function register(username: string): Promise<TestUser> {
-  return (await call('POST', '/auth/register', undefined, { username, password: PASSWORD })).data;
+  const { email, phone } = newContact();
+  return (await registerWith(username, email, phone)).data;
+}
+
+async function accountChecks(): Promise<void> {
+  // ── sign-up needs a confirmed email address and mobile number ──
+  check('sign-up without them is refused',
+    (await call('POST', '/auth/register', undefined, { username: 'nobody', password: PASSWORD })).status === 400);
+  check('a malformed email is refused',
+    (await call('POST', '/auth/verify/start', undefined, { channel: 'email', value: 'not-an-email' })).status === 400);
+  check('a number that is not an Indian mobile is refused',
+    (await call('POST', '/auth/verify/phone', undefined, { idToken: 'test-phone:+14155552671' })).status === 400);
+  check('a Firebase token that is not genuine is refused',
+    [400, 503].includes((await call('POST', '/auth/verify/phone', undefined, { idToken: 'not-a-token' })).status));
+  check('the server sends no SMS itself',
+    (await call('POST', '/auth/verify/start', undefined, { channel: 'phone', value: '9876543210' })).status === 400);
+
+  let r = await call('POST', '/auth/verify/start', undefined, { channel: 'email', value: 'wrong.codes@example.com' });
+  const wrongId: string = r.data.verificationId;
+  check('a new code cannot be asked for straight away',
+    (await call('POST', '/auth/verify/start', undefined, { channel: 'email', value: 'Wrong.Codes@example.com' })).status === 429);
+  const right = await codeFor(wrongId);
+  const wrong = right === '000000' ? '111111' : '000000';
+  r = await call('POST', '/auth/verify/check', undefined, { verificationId: wrongId, code: wrong });
+  check('a wrong code is refused and says how many tries are left', r.status === 400 && /4 tries left/.test(r.data.error), r.data);
+  for (let i = 0; i < 4; i++) r = await call('POST', '/auth/verify/check', undefined, { verificationId: wrongId, code: wrong });
+  check('after five wrong codes even the right one is refused',
+    (await call('POST', '/auth/verify/check', undefined, { verificationId: wrongId, code: right })).status === 410);
+
+  const asha = newContact();
+  const ashaEmail = 'asha.k@gmail.com';
+  r = await registerWith('asha', ashaEmail, asha.phone);
+  check('sign-up with both confirmed works', r.status === 201 && r.data.needsContact === false, r.data);
+  const ashaToken: string = r.data.token;
+  const stored = await prisma.user.findUniqueOrThrow({ where: { username: 'asha' } });
+  check('only fingerprints are stored, not the email or number',
+    /^[0-9a-f]{64}$/.test(stored.emailHash ?? '') && /^[0-9a-f]{64}$/.test(stored.phoneHash ?? '')
+      && !JSON.stringify(stored).includes('asha.k') && !JSON.stringify(stored).includes(asha.phone));
+  check('the same email in another form cannot sign up again',
+    (await registerWith('asha2', 'Asha.K+second@GMAIL.com', newContact().phone)).status === 409);
+  check('the same mobile number in another form cannot sign up again',
+    (await registerWith('asha3', newContact().email, `+91 ${asha.phone.slice(0, 5)} ${asha.phone.slice(5)}`)).status === 409);
+  const reused = await confirm('email', newContact().email);
+  await call('POST', '/auth/register', undefined, {
+    username: 'once', password: PASSWORD, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
+  });
+  check('a confirmation is used up by the sign-up it was for',
+    (await call('POST', '/auth/register', undefined, {
+      username: 'twice', password: PASSWORD, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
+    })).status === 400);
+  check('a username of digits only is refused', (await registerWith('9876501234', newContact().email, newContact().phone)).status === 400);
+
+  // ── sign in with any of the three ──
+  for (const [how, identifier] of [['username', 'asha'], ['email', 'ASHA.K@gmail.com'], ['mobile number', `0${asha.phone}`]]) {
+    r = await call('POST', '/auth/login', undefined, { identifier, password: PASSWORD });
+    check(`sign in with the ${how}`, r.status === 200 && r.data.username === 'asha', r.data);
+  }
+  check('a wrong password with the email is refused',
+    (await call('POST', '/auth/login', undefined, { identifier: ashaEmail, password: 'wrong-password' })).status === 401);
+
+  // ── password reset with a code ──
+  await sleep(2100);
+  r = await call('POST', '/auth/reset', undefined, {
+    channel: 'phone', verificationId: await confirm('phone', asha.phone), newPassword: 'reset-password-1',
+  });
+  check('a code to the mobile number resets the password', r.status === 200 && r.data.username === 'asha', r.data);
+  check('the new token works and the old one does not',
+    (await call('GET', '/groups', r.data.token)).status === 200 && (await call('GET', '/groups', ashaToken)).status === 401);
+  check('the new password signs in',
+    (await call('POST', '/auth/login', undefined, { identifier: ashaEmail, password: 'reset-password-1' })).status === 200);
+  check('a reset for an address no account uses is refused',
+    (await call('POST', '/auth/reset', undefined, {
+      channel: 'email', verificationId: await confirm('email', 'stranger@example.com'), newPassword: 'reset-password-2',
+    })).status === 404);
+
+  // ── an account from before contact details were required ──
+  await prisma.user.create({ data: { username: 'oldtimer', passwordHash: await bcrypt.hash(PASSWORD, 4) } });
+  r = await call('POST', '/auth/login', undefined, { username: 'oldtimer', password: PASSWORD });
+  check('an older account signs in and is told to add its details', r.status === 200 && r.data.needsContact === true, r.data);
+  const oldToken: string = r.data.token;
+  r = await call('GET', '/groups', oldToken);
+  check('until then the site refuses it', r.status === 403 && r.data.code === 'CONTACT_REQUIRED', r.data);
+  r = await call('GET', '/auth/me', oldToken);
+  check('it can see what is missing', r.status === 200 && r.data.hasEmail === false && r.data.hasPhone === false, r.data);
+  const old = newContact();
+  check('it cannot take an email another account has',
+    (await call('POST', '/auth/contact', oldToken, {
+      emailVerificationId: await confirm('email', ashaEmail), phoneVerificationId: await confirm('phone', old.phone),
+    })).status === 409);
+  await sleep(2100);
+  r = await call('POST', '/auth/contact', oldToken, {
+    emailVerificationId: await confirm('email', old.email), phoneVerificationId: await confirm('phone', old.phone),
+  });
+  check('with its own details added it can use the site',
+    r.status === 200 && r.data.needsContact === false && (await call('GET', '/groups', oldToken)).status === 200, r.data);
+  check('the details cannot be changed afterwards',
+    (await call('POST', '/auth/contact', oldToken, { emailVerificationId: await confirm('email', newContact().email) })).status === 409);
+
+  // The users above are not part of the group checks that follow.
+  await prisma.groupMember.deleteMany();
+  await prisma.group.deleteMany();
+  await prisma.user.deleteMany();
 }
 
 async function run(): Promise<void> {
   check('health answers, database included', (await call('GET', '/health')).status === 200);
+  await accountChecks();
 
   // ── groups are assigned ──
   const users: TestUser[] = [];
@@ -201,7 +352,7 @@ async function run(): Promise<void> {
   check('a password change gives a new token and ends the old one',
     r.status === 200 && (await call('GET', '/groups', r.data.token)).status === 200 && (await call('GET', '/groups', u2.token)).status === 401);
   const tries: number[] = [];
-  for (let i = 0; i < 4; i++) tries.push((await call('POST', '/auth/login', undefined, { username: 'user_3', password: `wrong-${i}` })).status);
+  for (let i = 0; i < 4; i++) tries.push((await call('POST', '/auth/login', undefined, { identifier: 'user_3', password: `wrong-${i}` })).status);
   check('wrong passwords are cut off', tries.join() === '401,401,401,429', tries);
   r = await call('GET', '/posts/a%00b', u1.token);
   check('a database error is answered as JSON, without details', r.status === 500 && r.json && !/prisma/i.test(JSON.stringify(r.data)), r.data);
@@ -218,7 +369,11 @@ async function main(): Promise<void> {
   console.log(`Migrations applied to schema ${schema}.`);
 
   const server = spawn(process.execPath, ['--require', 'ts-node/register/transpile-only', 'src/index.ts'], {
-    cwd: ROOT, env, stdio: ['ignore', 'ignore', 'inherit'],
+    cwd: ROOT, env, stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  server.stdout.setEncoding('utf8');
+  server.stdout.on('data', (chunk: string) => {
+    for (const [, id, code] of chunk.matchAll(/\[local code\] \w+ (\S+) (\d{6})/g)) codes.set(id, code);
   });
   try {
     let up = false;

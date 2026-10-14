@@ -75,6 +75,11 @@ function getApp(): admin.app.App {
   return app;
 }
 
+/** Firebase Authentication of the ProMic project (used to confirm mobile numbers). */
+export function promicAuth(): admin.auth.Auth {
+  return getApp().auth();
+}
+
 function coord(value: unknown): number | null {
   // ProMic writes 0.0 for "no fix".
   return typeof value === 'number' && value !== 0 ? value : null;

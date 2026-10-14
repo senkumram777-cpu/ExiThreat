@@ -15,6 +15,11 @@ model User {
   // Sign-in tokens issued before this moment are refused: set by a password change and by
   // "sign out everywhere" (see middleware/auth.ts).
   tokensValidFrom DateTime?
+  // Fingerprints (keyed one-way hashes) of the email address and mobile number, never the
+  // values themselves; see services/contactService.ts. Empty only on accounts from before
+  // they were required, which must add them before using the site.
+  emailHash String? @unique
+  phoneHash String? @unique
 
   groupMemberships GroupMember[]
   posts            Post[]        @relation("OCPosts")
@@ -160,4 +165,19 @@ model ProMicLink {
   linkedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// A 6-digit code sent to an email address or mobile number, and, once entered, the proof
+// that the user owns it. Used once; rows older than a day are removed.
+model ContactVerification {
+  id         String    @id @default(uuid())
+  channel    String    // "email" or "phone"
+  targetHash String    // fingerprint of the address or number
+  codeHash   String
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  verifiedAt DateTime?
+
+  @@index([targetHash, createdAt])
 }

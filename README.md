@@ -35,16 +35,31 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
 ## How ExiThreat works
 
 1. **Account.** Register with a username (3 to 30 letters, digits, dots, dashes or
-   underscores) and a password of 8 to 72 characters; no email or phone is asked for, so there
-   is no password reset. Passwords are hashed with bcrypt, and sign-in returns a token valid
-   for 7 days. The Account page signs out, signs out on all devices, and changes the password
-   (which also signs every other device out). Ten wrong passwords for one account from one
-   network address block further tries for 15 minutes.
+   underscores, at least one letter), an email address, an Indian mobile number and a password
+   of 8 to 72 characters. The email and the mobile are each confirmed with a 6-digit code
+   (see [How codes are sent](#how-codes-are-sent)). **Each email address and each mobile number can
+   have only one account**: a second sign-up with either is refused, also when it is written
+   differently (capitals, `+tags`, dots in Gmail addresses, `+91`/`0` prefixes and spaces).
+   Neither is stored: the database keeps only a keyed one-way fingerprint of each
+   (`backend/src/services/contactService.ts`), so they can be matched but not read back. They
+   cannot be changed once set.
+   - Sign in with the username, the email address or the mobile number. Passwords are hashed
+     with bcrypt, and sign-in returns a token valid for 7 days.
+   - "Forgot password?" sends a code to the account's email or mobile and sets a new password;
+     every device is signed out.
+   - Accounts made before email and mobile were required must add both at their next sign-in
+     (`/account/contact`); until then the API refuses them everything else.
+   - The Account page signs out, signs out on all devices, and changes the password (which
+     also signs every other device out). Ten wrong passwords for one account from one network
+     address block further tries for 15 minutes.
+   - Codes expire after 10 minutes and allow 5 wrong tries. One address or number gets a new
+     code at most once a minute and 5 times a day; one network address may ask for 20 codes
+     an hour and create 20 accounts a day.
 2. **Groups.** Nobody chooses or creates a group. The server places each user in one group at
    random (emptier groups are more likely), at sign-up, or at the next sign-in for older
    accounts. A group holds at most 25 members; new groups are opened as needed and get a
    generated name. A user sees only their own group: its posts, its chat (which never leaves
-   it) and its member names. One network address can create 5 accounts a day.
+   it) and its member names.
 3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
    server makes a redacted copy, replacing emails, phone numbers, names, companies, addresses,
    URLs, dates and ID numbers (Indian and US formats) with labels such as `[NAME REDACTED]`.
@@ -91,7 +106,8 @@ running `npm run dev`.
 | Route | Purpose |
 |---|---|
 | `/` | Home |
-| `/auth/register`, `/auth/login`, `/account` | Sign up, sign in; sign out and change password |
+| `/auth/register`, `/auth/login`, `/auth/reset` | Sign up, sign in, reset a forgotten password |
+| `/account`, `/account/contact` | Sign out and change password; add email and mobile to an older account |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
 | `/disclosures` | The user's own posts ("Mine") |
 | `/offline` | Shown by the service worker when there is no connection |
@@ -99,13 +115,34 @@ running `npm run dev`.
 | `/promic` | A ProMic user's own backups |
 | `/law-enforcement` | Officer sign in (separate from ExiThreat accounts) |
 
+### How codes are sent
+
+- **Email:** the server sends the code from a Gmail account over Gmail SMTP with an app
+  password (`GMAIL_USER`, `GMAIL_APP_PASSWORD`), the same account ProMic uses for officers'
+  codes (`backend/src/services/delivery.ts`). About 500 emails a day; check spam.
+- **Mobile:** Firebase Phone Authentication on ProMic's Firebase project. The browser shows
+  Google's reCAPTCHA (usually invisible) and Google sends the SMS
+  (`frontend/src/lib/firebasePhone.ts`). The browser passes the resulting token to
+  `POST /auth/verify/phone`; the server checks it with the ProMic service account, keeps only
+  the fingerprint and deletes the Firebase user the sign-in created
+  (`backend/src/services/phoneVerification.ts`). A number that already belongs to a ProMic
+  account signs in to that account, which is never deleted. Google bills each SMS to the
+  ProMic project. `exithreat.fly.dev` must be in Firebase console → Authentication →
+  Settings → Authorized domains.
+
 ### API
 
-All routes are under `/api` and, except register and login, need `Authorization: Bearer <token>`.
+All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
+`Authorization: Bearer <token>`. An account without its email and mobile number is answered
+403 with `code: "CONTACT_REQUIRED"` everywhere except `/auth/me`, `/auth/contact`,
+`/auth/password` and `/auth/signout-all`.
 
 | Route | Purpose |
 |---|---|
-| `POST /auth/register`, `POST /auth/login`, `POST /auth/password`, `POST /auth/signout-all` | Account |
+| `POST /auth/verify/start`, `POST /auth/verify/check` | Send a code to an email address; enter it |
+| `POST /auth/verify/phone` | A Firebase ID token from a phone sign-in, exchanged for a confirmation of that number |
+| `POST /auth/register`, `POST /auth/login`, `POST /auth/reset` | Sign up (with both confirmations), sign in (username, email or mobile), new password with a confirmation |
+| `GET /auth/me`, `POST /auth/contact`, `POST /auth/password`, `POST /auth/signout-all` | The account and whether its contact details are complete; add them; change password; sign out everywhere |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
@@ -234,9 +271,11 @@ Backend (`backend/.env`, not in git):
 | `PORT` | Defaults to 4000 |
 | `TRUST_PROXY` | Set to `1` behind a hosting proxy so rate limits apply per visitor |
 | `PROMIC_DATABASE_URL`, `PROMIC_STORAGE_BUCKET` | ProMic's Firebase project (optional) |
-| `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key (optional). Never commit it |
+| `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key: ProMic backups, and checking mobile confirmations. Never commit it |
 | `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25) |
-| `REGISTER_LIMIT_PER_DAY`, `LOGIN_ATTEMPTS` | Accounts per network address a day, and wrong passwords per 15 minutes (optional; 5 and 10) |
+| `CONTACT_HASH_SECRET` | Key for the email and mobile fingerprints, at least 32 characters. **Never change or lose it**: every stored fingerprint would stop matching. Without it a hosted server takes no sign-ups |
+| `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail account and app password that send the email codes |
+| `REGISTER_LIMIT_PER_DAY`, `CODE_SENDS_PER_HOUR`, `LOGIN_ATTEMPTS` | Accounts per network address a day, codes asked for per address an hour, wrong passwords per 15 minutes (optional; 20, 20 and 10) |
 
 Frontend (`frontend/.env.local`, or build arguments):
 
@@ -257,7 +296,7 @@ Frontend (`frontend/.env.local`, or build arguments):
 | Command (in `backend`) | What it checks |
 |---|---|
 | `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping, weight, size checks |
-| `npm run test:api` | Starts the real server on an empty, throwaway PostgreSQL schema and walks through reading rules, the first look, voting and moving, and account limits. Needs `DATABASE_URL`; it builds the schema from the migrations and removes it afterwards |
+| `npm run test:api` | Starts the real server on an empty, throwaway PostgreSQL schema and walks through sign-up with codes, one account per email and mobile, sign-in, reset, older accounts, reading rules, the first look, voting and moving, and account limits. Needs `DATABASE_URL`; it builds the schema from the migrations and removes it afterwards |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs both, the type checks and the website build
 on every push and pull request.
@@ -285,7 +324,10 @@ cd backend  && fly deploy --ha=false     # first: the website may need the new A
 cd frontend && fly deploy --ha=false
 ```
 
-Secrets on `exithreat-api` (`fly secrets set`): `JWT_SECRET`, `PROMIC_SERVICE_ACCOUNT_JSON`.
+Secrets on `exithreat-api` (`fly secrets set`): `JWT_SECRET`, `CONTACT_HASH_SECRET`,
+`GMAIL_USER`, `GMAIL_APP_PASSWORD`, `PROMIC_SERVICE_ACCOUNT_JSON`. Without the Gmail keys the
+hosted server sends no email codes (sign-up answers "not set up yet"); on a computer that is
+not hosting it, the code is printed to the server's console instead.
 The backend image applies any new migrations each time it starts, then starts the API.
 `GET /api/health` also asks the database, so Fly's check fails if the API cannot reach it.
 
@@ -301,9 +343,13 @@ These public servers are meant for light use.
   server and served once per member. This slows copying down; it cannot stop a screenshot. The
   text is not encrypted in the database.
 - Reading is limited to a group's members, and membership is assigned at random
-  (`backend/src/services/groupService.ts`). Someone who opens many accounts still ends up in
-  many groups: accounts need no email or phone, and the limit per network address only slows
-  this down.
+  (`backend/src/services/groupService.ts`). One person can have more accounts only with more
+  email addresses and mobile numbers of their own; extra email addresses are easy to get,
+  extra SIM cards less so.
+- The email address passes through Gmail, and the mobile number through Google's Firebase,
+  to deliver the codes; both keep their own logs. ExiThreat itself keeps only fingerprints;
+  with `CONTACT_HASH_SECRET`, anyone holding the database could still check whether a
+  particular address or number has an account.
 - For a trial with only a few accounts, lower `GROUP_MIN_MEMBERS` on the backend
   (`fly secrets set` or `[env]` in `backend/fly.toml`). Smaller groups are easier to fill
   with one person's accounts, so put it back before real use.
@@ -331,7 +377,11 @@ These public servers are meant for light use.
   active they are) is recalculated as members use their group and is shown on the group
   pages, but nothing depends on it.
 - There is no admin role in ExiThreat, and no way to leave or change group.
-- A forgotten password cannot be recovered, and an account cannot be deleted by its owner.
+- An account cannot be deleted by its owner, and its email or mobile cannot be changed.
+- Only Indian mobile numbers are accepted.
+- Sending from Gmail and confirming with Firebase have been tested only up to the providers:
+  locally, codes were printed and numbers confirmed with test tokens. The first real use is
+  on the hosted site.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
   15 accounts before a post can also move on.
 - Redaction is pattern-based, for English text with Indian and US formats. It misses names in

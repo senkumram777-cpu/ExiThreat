@@ -17,6 +17,15 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   database), `npm run test:api` (needs `DATABASE_URL`; uses a throwaway schema),
   `npm run db:migrate -- --name <what_changed>`, `npm run db:generate`
 - A schema change always comes with a new migration folder. Never `prisma db push`.
+- Accounts: one per email address and per mobile number, stored only as HMAC fingerprints
+  (`backend/src/services/contactService.ts`, key `CONTACT_HASH_SECRET`, which must never
+  change). Email codes go out from Gmail (`services/delivery.ts`); without keys and off the
+  host they are printed as `[local code] email <id> <code>`, which the API test reads. Mobile
+  numbers are confirmed by Firebase Phone Auth on ProMic's project in the browser
+  (`frontend/src/lib/firebasePhone.ts`) and checked in `services/phoneVerification.ts`; off the
+  host, `PHONE_TOKEN_TEST=1` accepts `test-phone:<number>` instead (the API test uses it).
+  Routes use `requireAuth` (refuses accounts lacking contact details with `CONTACT_REQUIRED`)
+  or `requireSignedIn` (account management only).
 - `frontend`: `npm run dev`, `npm run build`, `npm run lint`
 
 ## Sibling project: ProMic

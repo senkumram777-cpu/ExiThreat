@@ -11,7 +11,7 @@ const inputClass =
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,8 +27,9 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      saveSession(await auth.login(username, password));
-      router.push('/groups');
+      const session = await auth.login(identifier, password);
+      saveSession(session);
+      router.push(session.needsContact ? '/account/contact' : '/groups');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -46,13 +47,13 @@ export default function LoginPage() {
       )}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
-          Username
+          Username, email or mobile number
           <input
             type="text"
             autoComplete="username"
             autoCapitalize="none"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             required
             className={inputClass}
           />
@@ -78,6 +79,11 @@ export default function LoginPage() {
         </button>
       </form>
       <p className="text-center text-xs font-mono text-gray-500 mt-4">
+        <Link href="/auth/reset" className="text-accent-teal">
+          Forgot password?
+        </Link>
+      </p>
+      <p className="text-center text-xs font-mono text-gray-500 mt-2">
         No account?{' '}
         <Link href="/auth/register" className="text-accent-teal">
           Register anonymously

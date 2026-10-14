@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { auth } from '@/lib/api';
 import { saveSession } from '@/lib/session';
+import ContactVerifier from '@/components/ContactVerifier';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
@@ -14,19 +15,25 @@ export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [repeatPassword, setRepeatPassword] = useState('');
+  const [emailProof, setEmailProof] = useState<string | null>(null);
+  const [phoneProof, setPhoneProof] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    if (!emailProof || !phoneProof) {
+      setError('Confirm your email address and mobile number with their codes first');
+      return;
+    }
     if (password !== repeatPassword) {
       setError('The two passwords are not the same');
       return;
     }
     setLoading(true);
     try {
-      saveSession(await auth.register(username, password));
+      saveSession(await auth.register(username, password, emailProof, phoneProof));
       router.push('/groups');
     } catch (err) {
       setError((err as Error).message);
@@ -45,7 +52,7 @@ export default function RegisterPage() {
       </p>
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
-          Pseudonym (3 to 30 letters, digits, dots, dashes or underscores)
+          Pseudonym (3 to 30 letters, digits, dots, dashes or underscores, with at least one letter)
           <input
             type="text"
             autoComplete="username"
@@ -54,11 +61,18 @@ export default function RegisterPage() {
             onChange={(e) => setUsername(e.target.value)}
             minLength={3}
             maxLength={30}
-            pattern="[A-Za-z0-9_.\-]+"
+            pattern="[A-Za-z0-9_.\-]*[A-Za-z][A-Za-z0-9_.\-]*"
             required
             className={inputClass}
           />
         </label>
+        <ContactVerifier channel="email" onVerified={setEmailProof} />
+        <ContactVerifier channel="phone" onVerified={setPhoneProof} />
+        <p className="text-xs font-mono text-gray-500 leading-relaxed">
+          Each email address and mobile number can have only one account. ExiThreat keeps only
+          a one-way fingerprint of them, never the address or number itself; they are passed
+          to our email and SMS services only to deliver the code.
+        </p>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Password (at least 8 characters)
           <input
@@ -85,14 +99,10 @@ export default function RegisterPage() {
             className={inputClass}
           />
         </label>
-        <p className="text-xs font-mono text-yellow-600 leading-relaxed">
-          There is no password reset: no email or phone number is kept. If you forget your
-          password, the account cannot be recovered.
-        </p>
         {error && <div className="text-accent-red text-xs font-mono">{error}</div>}
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !emailProof || !phoneProof}
           className="py-3 bg-accent-red text-white rounded-lg font-mono font-bold text-sm disabled:opacity-50 hover:bg-accent-red/80 transition-colors"
         >
           {loading ? 'Creating account…' : 'Create Account'}

@@ -9,6 +9,7 @@ import { redactContent } from '../services/redactionService';
 import { generatePaperStrip, wrapText } from '../services/imageService';
 import { weightOf } from '../services/weight';
 import { LIMITS, passwordProblem, readText, USERNAME_PATTERN } from '../services/validation';
+import { normalizeEmail, normalizePhone } from '../services/contactFormat';
 
 /** Asserts that none of `secrets` survives redaction of `text`, and returns the result. */
 function hides(text: string, ...secrets: string[]): string {
@@ -106,4 +107,17 @@ test('validation: passwords and usernames', () => {
   assert.ok(passwordProblem(12345678));
   assert.ok(USERNAME_PATTERN.test('Asha_1.k-2'));
   assert.ok(!USERNAME_PATTERN.test('bad name!'));
+});
+
+test('contact details: one form per inbox and per number', () => {
+  assert.equal(normalizeEmail(' Asha.K+work@GMAIL.com '), 'ashak@gmail.com');
+  assert.equal(normalizeEmail('asha.k@googlemail.com'), 'ashak@gmail.com');
+  assert.equal(normalizeEmail('Ravi.Kumar@Example.co.in'), 'ravi.kumar@example.co.in');
+  assert.equal(normalizeEmail('no-at-sign.example.com'), null);
+  for (const written of ['9876543210', '+91 98765 43210', '098765-43210', '91 9876543210', '(+91) 98765.43210']) {
+    assert.equal(normalizePhone(written), '919876543210', written);
+  }
+  for (const wrong of ['5876543210', '98765', '+1 415 555 2671', 'asha', '98765432101']) {
+    assert.equal(normalizePhone(wrong), null, wrong);
+  }
 });
