@@ -4,8 +4,11 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { generatePaperStrip } from '../services/imageService';
 import { redactContent } from '../services/redactionService';
-import { postAccess, postAccessById, NOT_IN_GROUP } from '../services/accessService';
+import { postAccess, postAccessById, readerGroup, NOT_IN_GROUP } from '../services/accessService';
 import { pickGroupForPost } from '../services/groupService';
+import { recalculateGroupWeight } from '../services/groupWeightService';
+import { groupMapFor } from '../services/groupMapService';
+import { recalculateSpread } from '../services/spreadService';
 import { LIMITS, readText } from '../services/validation';
 
 const router = Router();
@@ -19,12 +22,19 @@ function firstLookOpen(record: { viewedAt: Date; completedAt: Date | null } | nu
   return !record.completedAt && Date.now() - record.viewedAt.getTime() < FIRST_LOOK_WINDOW_MS;
 }
 
-// The latest group a post left, which is when it reached the one it is in now.
-const LAST_MOVE = { orderBy: { movedAt: 'desc' as const }, take: 1, select: { movedAt: true } };
+// The groups a post is in now, latest arrival first.
+const PLACEMENTS = { orderBy: { arrivedAt: 'desc' as const }, select: { arrivedAt: true } };
 
-/** When a post reached the group it is in: its last move, or its creation if it never moved. */
-function arrivedAt(post: { createdAt: Date }, lastMove: Array<{ movedAt: Date }>): Date {
-  return lastMove[0]?.movedAt ?? post.createdAt;
+/**
+ * How far a post has travelled, for its author only: groups it has left, groups it is in now,
+ * and when it last reached a group. Which groups is on its map (GET /posts/:id/map).
+ */
+function journeyOf(post: { createdAt: Date }, groupsPassed: number, placements: Array<{ arrivedAt: Date }>) {
+  return {
+    groupsPassed,
+    inGroups: placements.length,
+    arrivedAt: placements[0]?.arrivedAt ?? post.createdAt,
+  };
 }
 
 // POST /api/posts — create a new post (OC submits complaint)
@@ -54,18 +64,19 @@ router.post('/', requireAuth, handle(async (req: AuthRequest, res: Response): Pr
       originalContent,
       redactedContent,
       ocUserId: userId,
-      currentGroupId: groupId,
+      placements: { create: { groupId } },
     },
     select: {
       id: true,
       redactedContent: true,
       totalWeight: true,
       createdAt: true,
-      currentGroupId: true,
     },
   });
 
-  res.status(201).json(post);
+  // Its first group counts towards the share of groups it has reached.
+  await recalculateSpread(post.id);
+  res.status(201).json({ ...post, groupId });
 }));
 
 // POST /api/posts/preview — what the redacted version of this text would be. Saves nothing.
@@ -90,10 +101,13 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
       createdAt: true,
       lastManualPushAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
-      history: LAST_MOVE,
+      placements: PLACEMENTS,
     },
   });
-  res.json(posts.map(({ history, ...post }) => ({ ...post, arrivedAt: arrivedAt(post, history) })));
+  res.json(posts.map(({ placements, ...post }) => {
+    const journey = journeyOf(post, post._count.history, placements);
+    return { ...post, arrivedAt: journey.arrivedAt, inGroups: journey.inGroups };
+  }));
 }));
 
 // GET /api/posts/:id/strip — serves the PNG paper strip (unredacted, first-look only)
@@ -143,25 +157,29 @@ router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Respo
   }
 }));
 
-// POST /api/posts/:id/strip/done — the reader closed the first look; it is now used up
+// POST /api/posts/:id/strip/done — the reader closed the first look; it is now used up.
+// `reason` is "done" when they tapped "Done reading", which then shows the redacted version,
+// and "left" when they left the page. Only "done" counts as having gone through the post.
 router.post('/:id/strip/done', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
+  const finished = (req.body as { reason?: unknown } | undefined)?.reason === 'done';
+  const now = new Date();
 
   // Only an opened, not yet closed look can be closed, and only once.
   const closed = await prisma.viewRecord.updateMany({
     where: { postId: id, userId, completedAt: null },
-    data: { completedAt: new Date() },
+    data: { completedAt: now, ...(finished ? { redactedSeenAt: now } : {}) },
   });
 
   if (closed.count > 0) {
-    // Increment read-through count for trust score
-    const post = await prisma.post.findUnique({ where: { id }, select: { currentGroupId: true } });
-    if (post) {
+    const groupId = await readerGroup(id, userId);
+    if (groupId) {
       await prisma.groupMember.updateMany({
-        where: { groupId: post.currentGroupId, userId },
+        where: { groupId, userId },
         data: { readThroughCount: { increment: 1 } },
       });
+      if (finished) recalculateGroupWeight(groupId).catch((err) => console.error(err));
     }
   }
 
@@ -169,8 +187,8 @@ router.post('/:id/strip/done', requireAuth, handle(async (req: AuthRequest, res:
 }));
 
 // GET /api/posts/:id — fetch post metadata + redacted content.
-// Only for members of the post's current group and its author. Who wrote it is never sent:
-// the caller is told only whether it is their own.
+// Only for members of the post's current group and its author. Who wrote it is sent only as
+// their pseudonym, and whether it is the caller's own.
 router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
@@ -181,11 +199,11 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       redactedContent: true,
       totalWeight: true,
       createdAt: true,
-      currentGroupId: true,
       ocUserId: true,
       lastManualPushAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
-      history: LAST_MOVE,
+      placements: PLACEMENTS,
+      oc: { select: { pseudonym: true } },
     },
   });
   if (!post) {
@@ -206,20 +224,43 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       where: { postId_userId: { postId: id, userId } },
     });
     if (firstLookOpen(record)) firstLook = 'available';
+    // Coming back to a post whose first look they finished: they now see the redacted version.
+    else if (record?.completedAt && !record.redactedSeenAt) {
+      await prisma.viewRecord.update({ where: { id: record.id }, data: { redactedSeenAt: new Date() } });
+      if (access.groupId) recalculateGroupWeight(access.groupId).catch((err) => console.error(err));
+    }
   }
 
-  const { ocUserId: _author, history, _count, ...rest } = post;
+  const { ocUserId: _author, placements, _count, oc, ...rest } = post;
   res.json({
     ...rest,
+    // The author's pseudonym, never their username.
+    author: oc.pseudonym,
     _count: { pushVotes: _count.pushVotes, comments: _count.comments },
     isAuthor: access.isAuthor,
     isMember: access.isMember,
+    // The reader's own group, for the way back; never the others the post is in.
+    groupId: access.groupId,
     firstLook,
     // Only the author is told how far the post has travelled and since when it is where it is.
-    ...(access.isAuthor
-      ? { journey: { groupsPassed: _count.history, arrivedAt: arrivedAt(post, history) } }
-      : {}),
+    ...(access.isAuthor ? { journey: journeyOf(post, _count.history, placements) } : {}),
   });
+}));
+
+// GET /api/posts/:id/map — for the author only: the groups their post can reach, by name and
+// weight, with the ones it has passed through and the ones it is in now, and the path between
+// them. No members, no member counts, no group ids.
+router.get('/:id/map', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const post = await prisma.post.findUnique({ where: { id: req.params.id }, select: { id: true, ocUserId: true } });
+  if (!post) {
+    res.status(404).json({ error: 'Post not found' });
+    return;
+  }
+  if (post.ocUserId !== req.userId) {
+    res.status(403).json({ error: 'Only the author can see where their post has been' });
+    return;
+  }
+  res.json(await groupMapFor(post));
 }));
 
 // GET /api/posts/:id/comments — fetch all tagged comments (travel with post)

@@ -7,8 +7,10 @@
  * this page talks only to ProMic's law-enforcement endpoints (ProMic repo, functions/le.js):
  * sign in, name the ProMic user by mobile number, enter the code that user sees in their ProMic
  * app, enter the code emailed to the officer, then listen to that user's most recent audio
- * backup. Nothing here uses the ExiThreat token or backend, so an officer gets no access to
- * groups, posts or chat.
+ * backup. An officer gets no access to groups or chat. The one thing they read from ExiThreat's
+ * own server is the common page (CommonFeed): the listed posts with both their original and
+ * redacted versions, by pseudonym. That server checks the ProMic session with ProMic's
+ * leWhoAmI.
  *
  * When the ProMic user's phone cannot be reached, the first code can come another way instead,
  * if that user allows it: from one of their Connected Users ("circle"), and after that from a
@@ -20,6 +22,8 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import AreaDashboard from './AreaDashboard';
+import CommonFeed from '@/components/CommonFeed';
+import { common } from '@/lib/api';
 
 const LE_BASE =
   process.env.NEXT_PUBLIC_PROMIC_LE_URL ?? 'https://asia-south1-promic-c5567.cloudfunctions.net';
@@ -357,6 +361,12 @@ export default function LawEnforcementPage() {
 
   const fallbackOpen = fallbackOpensAt !== null && now >= fallbackOpensAt;
 
+  const sessionToken = session?.token;
+  const loadCommon = useCallback(
+    (offset: number) => common.officerList(sessionToken ?? '', offset),
+    [sessionToken],
+  );
+
   const onDashboardSessionEnded = useCallback(() => {
     store(SESSION_KEY, null);
     setSession(null);
@@ -403,6 +413,20 @@ export default function LawEnforcementPage() {
         <div className="mb-6">
           <AreaDashboard baseUrl={LE_BASE} token={session.token} onSessionEnded={onDashboardSessionEnded} />
         </div>
+      )}
+
+      {step === 'host' && session && (
+        <details className="mb-6 p-4 bg-navy-800 rounded-xl border border-gray-800">
+          <summary className="font-mono font-bold text-sm text-accent-teal cursor-pointer">
+            ExiThreat Common Page
+          </summary>
+          <p className={`${introClass} mt-3 mb-4`}>
+            Disclosures that have reached at least 20% of ExiThreat&apos;s groups, the fastest
+            spreading first, with both the original and the redacted version. Authors appear by
+            pseudonym only.
+          </p>
+          <CommonFeed load={loadCommon} officer onUnauthorized={onDashboardSessionEnded} />
+        </details>
       )}
 
       {step === 'host' && (

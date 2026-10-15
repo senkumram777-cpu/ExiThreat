@@ -35,10 +35,10 @@ export default function SecureMarquee({ postId, onViewComplete, onUnavailable }:
   const mountedRef = useRef(false);
 
   // Tells the server the look is over. Does nothing if the strip never reached the screen.
-  const close = useCallback(() => {
+  const close = useCallback((reason: 'done' | 'left' = 'left') => {
     if (closedRef.current || !shownRef.current) return;
     closedRef.current = true;
-    postsApi.stripDone(postId);
+    postsApi.stripDone(postId, reason);
   }, [postId]);
 
   // Fetch PNG strip from backend
@@ -65,10 +65,11 @@ export default function SecureMarquee({ postId, onViewComplete, onUnavailable }:
   // unmounts and remounts every component once, which must not count as leaving.
   useEffect(() => {
     mountedRef.current = true;
-    window.addEventListener('pagehide', close);
+    const leave = () => close('left');
+    window.addEventListener('pagehide', leave);
     return () => {
       mountedRef.current = false;
-      window.removeEventListener('pagehide', close);
+      window.removeEventListener('pagehide', leave);
       setTimeout(() => {
         if (!mountedRef.current) close();
       }, 0);
@@ -76,7 +77,7 @@ export default function SecureMarquee({ postId, onViewComplete, onUnavailable }:
   }, [close]);
 
   const handleDone = () => {
-    close();
+    close('done');
     onViewComplete();
   };
 

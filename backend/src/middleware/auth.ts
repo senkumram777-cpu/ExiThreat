@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../index';
+import { noteActiveDay } from '../services/groupWeightService';
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -81,6 +82,8 @@ function checkToken(req: AuthRequest, res: Response, next: NextFunction, needCon
       }
       req.userId = payload.userId;
       req.username = user.username;
+      // Days of use count towards the weight of the user's group.
+      void noteActiveDay(payload.userId);
       next();
     })
     .catch(next);

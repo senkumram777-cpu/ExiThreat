@@ -127,7 +127,7 @@ export default function PushButton({ postId, isOC, firstLookOpen, onMoved }: Pus
 
       {status?.thresholdReached && (
         <div className="text-center text-xs font-mono text-green-400 animate-pulse">
-          Enough votes — it moves on as soon as another group can take it
+          Enough votes — it is forwarded as soon as another group can take it
         </div>
       )}
 

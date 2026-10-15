@@ -64,7 +64,7 @@ export default function GroupsPage() {
             </div>
             <div className="flex flex-col items-end gap-1">
               <div className="text-xs font-mono text-accent-teal">
-                Trust {(g.trustScore * 100).toFixed(0)}%
+                Weight {(g.trustScore * 100).toFixed(0)}%
               </div>
               <div
                 className="w-16 h-1.5 bg-navy-700 rounded-full overflow-hidden"

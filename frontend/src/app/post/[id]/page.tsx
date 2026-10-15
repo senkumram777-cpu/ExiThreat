@@ -19,6 +19,7 @@ export default function PostPage() {
   const [firstLookNote, setFirstLookNote] = useState<string | null>(null);
   const [manualPushCooldown, setManualPushCooldown] = useState<string | null>(null);
   const [manualPushing, setManualPushing] = useState(false);
+  const [manualPushNotice, setManualPushNotice] = useState<string | null>(null);
   // The post has gone to another group while a member had it open.
   const [movedOn, setMovedOn] = useState(false);
 
@@ -62,15 +63,17 @@ export default function PostPage() {
     if (!id || manualPushing) return;
     setManualPushing(true);
     setManualPushCooldown(null);
+    setManualPushNotice(null);
     try {
-      await pushApi.manualPush(id);
-      // Reload post to get new group
+      const result = await pushApi.manualPush(id);
+      setManualPushNotice(result.message);
+      // Reload post to get its new journey
       const updated = await postsApi.get(id);
       setPost(updated);
       weightageApi.get(id).then(setWeightageData).catch(() => {});
     } catch (err) {
       const msg = (err as Error).message;
-      if (msg.includes('cooldown')) {
+      if (msg.includes('cooldown') || msg.includes('already in')) {
         setManualPushCooldown(msg);
       } else {
         setError(msg);
@@ -105,7 +108,7 @@ export default function PostPage() {
           be opened from here.
         </p>
         <Link
-          href={`/group/${post.currentGroupId}`}
+          href={post.groupId ? `/group/${post.groupId}` : '/groups'}
           className="px-6 py-3 border border-accent-teal text-accent-teal rounded-lg font-mono font-bold text-sm hover:bg-accent-teal hover:text-navy-900 transition-colors no-underline"
         >
           Back to Group
@@ -119,7 +122,7 @@ export default function PostPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <Link
-          href={isOC ? '/disclosures' : `/group/${post.currentGroupId}`}
+          href={isOC ? '/disclosures' : post.groupId ? `/group/${post.groupId}` : '/groups'}
           className="text-xs font-mono text-gray-500 hover:text-accent-teal"
         >
           {isOC ? '← My Disclosures' : '← Back to Group'}
@@ -128,6 +131,7 @@ export default function PostPage() {
         <span className="text-xs font-mono text-gray-600">
           {new Date(post.createdAt).toLocaleDateString()}
         </span>
+        {!isOC && <span className="text-xs font-mono text-gray-400">by {post.author}</span>}
         {isOC && (
           <span className="ml-auto text-xs font-mono text-accent-teal border border-accent-teal/30 px-2 py-0.5 rounded-full">
             Your Post
@@ -164,7 +168,13 @@ export default function PostPage() {
           <div className="text-xs font-mono text-gray-400 uppercase tracking-widest mb-3">
             Journey So Far
           </div>
-          <div className="grid grid-cols-2 gap-3 font-mono">
+          <div className="grid grid-cols-3 gap-3 font-mono">
+            <div>
+              <div className="text-lg font-bold text-accent-teal">{post.journey.inGroups}</div>
+              <div className="text-xs text-gray-500">
+                group{post.journey.inGroups !== 1 ? 's' : ''} reading it now
+              </div>
+            </div>
             <div>
               <div className="text-lg font-bold text-accent-teal">{post.journey.groupsPassed}</div>
               <div className="text-xs text-gray-500">
@@ -175,10 +185,21 @@ export default function PostPage() {
               <div className="text-sm font-bold text-gray-200">
                 {new Date(post.journey.arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
               </div>
-              <div className="text-xs text-gray-500">arrived in its current group</div>
+              <div className="text-xs text-gray-500">last reached a group</div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* The map of every group: for the author only, on its own page */}
+      {isOC && (
+        <Link
+          href={`/post/${id}/map`}
+          className="flex items-center justify-between p-4 bg-navy-800 rounded-xl border border-gray-800 hover:border-accent-teal/40 transition-colors no-underline"
+        >
+          <span className="text-xs font-mono text-gray-400 uppercase tracking-widest">Where Your Post Has Been</span>
+          <span className="text-xs font-mono text-accent-teal">Open map →</span>
+        </Link>
       )}
 
       {/* Weightage card */}
@@ -232,9 +253,13 @@ export default function PostPage() {
             Manual Push (OC Only)
           </div>
           <p className="text-xs font-mono text-gray-500 mb-3">
-            Move your post to a new random group immediately. Usable once every 24 hours.
-            Carries 0 weightage and invalidates current group&apos;s votes.
+            Forward your post to more groups now: 1 to 3, depending on your own weightage, with
+            at least one stronger group when there is one. They appear on its map. It stays in the groups it is in, up to
+            5 at once. Once every 24 hours; adds nothing to its credibility weightage.
           </p>
+          {manualPushNotice && (
+            <div className="text-green-400 text-xs font-mono mb-2">{manualPushNotice}</div>
+          )}
           {manualPushCooldown && (
             <div className="text-accent-red text-xs font-mono mb-2">{manualPushCooldown}</div>
           )}
@@ -243,7 +268,7 @@ export default function PostPage() {
             disabled={manualPushing}
             className="w-full py-2 border border-yellow-700 text-yellow-500 rounded-lg font-mono text-sm disabled:opacity-40 hover:bg-yellow-900/20 transition-colors"
           >
-            {manualPushing ? 'Moving…' : 'Manual Push'}
+            {manualPushing ? 'Forwarding…' : 'Manual Push'}
           </button>
         </div>
       )}

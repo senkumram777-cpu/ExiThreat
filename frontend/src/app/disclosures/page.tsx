@@ -59,7 +59,7 @@ export default function DisclosuresPage() {
         {list.map((post) => (
           <Link
             key={post.id}
-            href={`/post/${post.id}`}
+            href={`/post/${post.id}/map`}
             className="block p-4 bg-navy-800 border border-gray-800 rounded-xl hover:border-accent-teal/40 transition-colors no-underline"
           >
             <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">{post.redactedContent}</p>
@@ -69,7 +69,7 @@ export default function DisclosuresPage() {
                 {post._count.history} group{post._count.history !== 1 ? 's' : ''} passed
               </span>
               <span>
-                in its current group since{' '}
+                in {post.inGroups} group{post.inGroups !== 1 ? 's' : ''} now, last reached{' '}
                 {new Date(post.arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
               </span>
               <span>▲ {post._count.pushVotes} votes now</span>

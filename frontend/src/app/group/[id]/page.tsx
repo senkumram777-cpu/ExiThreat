@@ -58,7 +58,11 @@ export default function GroupPage() {
         <div>
           <h1 className="text-xl font-mono font-bold text-accent-teal">{group.name}</h1>
           <div className="text-xs font-mono text-gray-500 mt-1">
-            {group._count.members} members · Trust score {(group.trustScore * 100).toFixed(1)}%
+            {group._count.members} members · Group weight {(group.trustScore * 100).toFixed(0)}%
+          </div>
+          <div className="text-xs font-mono text-gray-600 mt-0.5">
+            Logins {(group.loginScore * 100).toFixed(0)}% · Posts gone through{' '}
+            {group.reviewScore === null ? '—' : `${(group.reviewScore * 100).toFixed(0)}%`}
           </div>
         </div>
         <span className="px-3 py-1 text-xs font-mono text-green-400 border border-green-800 rounded-full">
@@ -86,6 +90,7 @@ export default function GroupPage() {
                 <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">
                   {post.redactedContent}
                 </p>
+                <div className="text-xs font-mono text-gray-400 mb-1">by {post.author}</div>
                 <div className="flex gap-4 text-xs font-mono text-gray-500">
                   <span>⚖ Weight {post.totalWeight.toFixed(1)}</span>
                   <span>▲ {post._count.pushVotes} votes</span>

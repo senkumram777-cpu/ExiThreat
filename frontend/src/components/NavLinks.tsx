@@ -29,8 +29,9 @@ export default function NavLinks() {
   }
 
   return (
-    <div className="flex gap-3 sm:gap-4 text-xs sm:text-sm font-mono text-gray-400 whitespace-nowrap">
+    <div className="flex flex-wrap gap-x-3 gap-y-1 sm:gap-x-4 text-xs sm:text-sm font-mono text-gray-400 whitespace-nowrap">
       <Link href="/groups" className="hover:text-accent-teal transition-colors">Groups</Link>
+      <Link href="/common" className="hover:text-accent-teal transition-colors">Common</Link>
       <Link href="/disclosures" className="hover:text-accent-teal transition-colors">Mine</Link>
       <Link href="/promic" className="hover:text-accent-teal transition-colors">Backups</Link>
       <Link href="/account" className="hover:text-accent-teal transition-colors">Account</Link>

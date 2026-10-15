@@ -17,6 +17,38 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   database), `npm run test:api` (needs `DATABASE_URL`; uses a throwaway schema),
   `npm run db:migrate -- --name <what_changed>`, `npm run db:generate`
 - A schema change always comes with a new migration folder. Never `prisma db push`.
+- A post is in up to five groups at once (`PostPlacement`; there is no `Post.currentGroupId`).
+  Access, votes and tallies are per group (`readerGroup` in `accessService.ts`). Pushes forward
+  to several groups: reach and destinations in `services/forwarding.ts` (pure, unit-tested),
+  applied by `pushIfReady` / `forwardByAuthor` in `groupService.ts`. Each placement and history
+  row records how the post arrived (`arrivedBy`: `start`, `group` with `fromGroupId`, or
+  `author`); these are the edges of the author's group map (`GET /posts/:id/map`,
+  `services/groupMap.ts` pure and unit-tested, `groupMapService.ts`, website
+  `components/GroupMap.tsx`, page `/post/[id]/map`, opened from "Mine"). It covers every
+  group, with the round (`Post.cycle`) and the groups covered in it. The map gives group
+  names and weights only: never members, member counts or group ids, and only to the author.
+- Forwarding goes round in cycles (`Post.cycleStartedAt`, `chooseInCycle` in `forwarding.ts`):
+  only groups not reached since the cycle began, then a new cycle once all eligible groups have
+  had the post.
+- Pseudonyms (`User.pseudonym`, `services/pseudonym.ts`) are what groups and the common page
+  see of an author. Never send a username next to a pseudonym.
+- Common page: `services/spread.ts` (pure, unit-tested) and `spreadService.ts` store
+  `reachedGroups`, `eligibleGroups`, `spreadScore` and `listedAt` on each post, after every
+  push and hourly; `routes/common.ts` lists them. Officers get the original as well, after
+  `services/officerAuth.ts` checks their ProMic session with ProMic's `leWhoAmI`.
+- Local test builds use Next's `output: 'standalone'`, which leaves a link
+  `.next/standalone/node_modules` into the real packages. Remove that link first
+  (`cmd //c "rmdir .next\standalone\node_modules"`), then `.next`; `rm -rf .next` from Git
+  Bash empties `node_modules`.
+- Group weight (`Group.trustScore`, with `loginScore` and `reviewScore`): formula in
+  `backend/src/services/groupWeight.ts` (pure, unit-tested), gathered and stored by
+  `groupWeightService.ts`. Days of use are written by `requireAuth` and at sign-in
+  (`UserActiveDay`); a post counts as gone through when `ViewRecord.completedAt` and
+  `redactedSeenAt` are set (the website sends `reason: "done"` with `strip/done`).
+- Member weightage (`User.weight`, with `activityScore`, `postScore`, `voteScore`): formula in
+  `memberWeight.ts`, stored by `memberWeightService.ts`, which reuses `reviewCounts` from
+  `groupWeightService.ts`. Time on the site comes from `ActivityHeartbeat.tsx` →
+  `POST /auth/heartbeat` (`UserActiveDay.seconds`). Never send it to anyone but its owner.
 - Accounts: one per email address and per mobile number, stored only as HMAC fingerprints
   (`backend/src/services/contactService.ts`, key `CONTACT_HASH_SECRET`, which must never
   change). Email codes go out from Gmail (`services/delivery.ts`); without keys and off the

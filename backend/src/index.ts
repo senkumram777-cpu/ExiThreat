@@ -11,6 +11,7 @@ import groupsRouter from './routes/groups';
 import pushRouter from './routes/push';
 import weightageRouter from './routes/weightage';
 import promicRouter from './routes/promic';
+import commonRouter from './routes/common';
 
 export const prisma = new PrismaClient();
 
@@ -52,6 +53,7 @@ app.use('/api/groups', groupsRouter);
 app.use('/api/push', pushRouter);
 app.use('/api/weightage', weightageRouter);
 app.use('/api/promic', promicRouter);
+app.use('/api/common', commonRouter);
 
 // Also asks the database, so a server that is up but cannot reach it is reported as down.
 app.get('/api/health', (_req, res) => {

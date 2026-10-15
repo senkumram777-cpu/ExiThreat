@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import NavLinks from '@/components/NavLinks';
 import ServiceWorker from '@/components/ServiceWorker';
+import ActivityHeartbeat from '@/components/ActivityHeartbeat';
 
 export const metadata: Metadata = {
   title: 'ExiThreat',
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-dvh flex flex-col">
         <ServiceWorker />
+        <ActivityHeartbeat />
         {/* Top nav */}
         <nav className="sticky top-0 z-50 border-b border-gray-800 bg-navy-900/95 backdrop-blur-sm">
           {/* On a narrow phone the links drop to a second line under the name. */}

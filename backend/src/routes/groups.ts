@@ -2,12 +2,17 @@ import { Router, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
-import { recalculateGroupTrustScore } from '../services/weightageService';
 import { isGroupMember } from '../services/accessService';
 import { ensureGroup, touchMember } from '../services/groupService';
 import { LIMITS, readText } from '../services/validation';
 
 const router = Router();
+
+/** The posts a group holds now are its placements; the website calls them `currentPosts`. */
+function withPostCount<T extends { _count: { members: number; placements: number } }>(group: T) {
+  const { _count, ...rest } = group;
+  return { ...rest, _count: { members: _count.members, currentPosts: _count.placements } };
+}
 
 // GET /api/groups — the caller's own groups (summary). Other groups are not listed, and
 // nobody joins or creates one: the server assigns it (services/groupService.ts).
@@ -20,12 +25,15 @@ router.get('/', requireAuth, handle(async (req: AuthRequest, res: Response): Pro
       id: true,
       name: true,
       trustScore: true,
+      loginScore: true,
+      reviewScore: true,
+      weightUpdatedAt: true,
       createdAt: true,
-      _count: { select: { members: true, currentPosts: true } },
+      _count: { select: { members: true, placements: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
-  res.json(groups);
+  res.json(groups.map(withPostCount));
 }));
 
 // GET /api/groups/:id — group detail with member names and current posts. Members only.
@@ -37,8 +45,11 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       id: true,
       name: true,
       trustScore: true,
+      loginScore: true,
+      reviewScore: true,
+      weightUpdatedAt: true,
       createdAt: true,
-      _count: { select: { members: true, currentPosts: true } },
+      _count: { select: { members: true, placements: true } },
     },
   });
   if (!summary) {
@@ -58,21 +69,24 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       select: { user: { select: { username: true } } },
     }),
     prisma.post.findMany({
-      where: { currentGroupId: id },
+      where: { placements: { some: { groupId: id } } },
       select: {
         id: true,
         redactedContent: true,
         totalWeight: true,
         createdAt: true,
-        _count: { select: { pushVotes: true, comments: true } },
+        oc: { select: { pseudonym: true } },
+        // Only this group's votes: other groups holding the same post vote separately.
+        _count: { select: { pushVotes: { where: { groupId: id } }, comments: true } },
       },
     }),
   ]);
   res.json({
-    ...summary,
+    ...withPostCount(summary),
     isMember: true,
     members: members.map((m) => ({ username: m.user.username })),
-    currentPosts,
+    // Each post with its author's pseudonym, never the username.
+    currentPosts: currentPosts.map(({ oc, ...post }) => ({ ...post, author: oc.pseudonym })),
   });
 }));
 
@@ -99,9 +113,6 @@ router.post('/:id/heartbeat', requireAuth, handle(async (req: AuthRequest, res: 
       lastSeenAt: new Date(),
     },
   });
-
-  // Asynchronously recompute trust score — fire and forget
-  recalculateGroupTrustScore(id).catch(console.error);
 
   res.json({ ok: true });
 }));

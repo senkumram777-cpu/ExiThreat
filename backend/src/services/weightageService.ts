@@ -67,32 +67,3 @@ export async function recalculateTotalWeight(postId: string): Promise<number> {
   await prisma.post.update({ where: { id: postId }, data: { totalWeight: total } });
   return total;
 }
-
-/**
- * Recalculates the AI-based Group Trust Score and persists it.
- *
- * Trust Score = (readThroughRate * 0.6) + (activenessScore * 0.4)
- *
- * readThroughRate  = members who fully read Paper Strip / total members
- * activenessScore  = normalised average (visitCount * log(1 + totalTimeSpent))
- */
-export async function recalculateGroupTrustScore(groupId: string): Promise<number> {
-  const members = await prisma.groupMember.findMany({ where: { groupId } });
-  if (members.length === 0) return 0;
-
-  const totalMembers = members.length;
-  const readThroughCount = members.filter((m) => m.readThroughCount > 0).length;
-  const readThroughRate = readThroughCount / totalMembers;
-
-  const activenessRaw = members.map(
-    (m) => m.visitCount * Math.log1p(m.totalTimeSpent),
-  );
-  const maxActiveness = Math.max(...activenessRaw, 1);
-  const activenessScore =
-    activenessRaw.reduce((s, v) => s + v / maxActiveness, 0) / totalMembers;
-
-  const trustScore = readThroughRate * 0.6 + activenessScore * 0.4;
-
-  await prisma.group.update({ where: { id: groupId }, data: { trustScore } });
-  return trustScore;
-}

@@ -52,7 +52,9 @@ export default function NewPostPage() {
       <p className="text-xs font-mono text-gray-500 mb-6 leading-relaxed">
         Your submission will be sent to a random group that you are not in. Each of its members
         can read your exact words once, as an image; after that they see the redacted version.
-        Other members are not shown who wrote it.
+        Others see only your pseudonym, never your username. Once it has reached 20% of the
+        groups it is listed on the common page: every member sees the redacted version there,
+        and law-enforcement officers see your exact words as well.
       </p>
 
       <form onSubmit={handlePreview} className="flex flex-col gap-4">

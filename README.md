@@ -26,6 +26,8 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
 | `frontend/public/` | Web app manifest and icons. The service worker files are built, not kept in git |
 | `backend/` | Express API in TypeScript, Prisma, PostgreSQL, JWT auth |
 | `backend/prisma/schema.prisma`, `backend/prisma/migrations/` | Database schema and its history |
+| `backend/src/services/` | The rules: `groupService.ts` (groups, votes, forwarding), `forwarding.ts` (reach and destinations), `groupWeight.ts` and `groupWeightService.ts` (group weight), `memberWeight.ts` and `memberWeightService.ts` (member weightage), `contactService.ts` and `phoneVerification.ts` (one account per email and mobile), `redactionService.ts`, `imageService.ts` (the first-look strip), `promicService.ts` |
+| `frontend/src/lib/firebasePhone.ts`, `frontend/src/components/ContactVerifier.tsx` | Confirming an email or mobile number on the pages |
 | `backend/src/tests/` | Unit tests and the API test |
 | `backend/scripts/start.js` | Hosted start-up: apply migrations, then start the API |
 | `.github/workflows/ci.yml` | Tests and builds on every push |
@@ -60,6 +62,29 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    accounts. A group holds at most 25 members; new groups are opened as needed and get a
    generated name. A user sees only their own group: its posts, its chat (which never leaves
    it) and its member names.
+   - **Group weight** (0 to 100%, shown on the group pages) measures how active the members
+     are. Each member gets two scores, which count equally:
+     - *Logins:* the days on which they used ExiThreat signed in, out of the last 30 (or
+       since they joined, if that is shorter). Using it every other day is full marks.
+     - *Posts gone through:* of the posts that reached the group while they were in it, the
+       share whose first look (the original post) they read to the end with "Done reading"
+       and whose redacted version they were then shown. A post they have not gone through
+       counts against them only once it has been in the group for 24 hours. Voting to push
+       is not required: not voting means "keep it here".
+     The group's weight is the average of its members' scores; before any post has reached
+     it, logins alone. It is recalculated every hour, and for a group at once when one of its
+     members finishes going through a post. It decides how far that group's pushes reach (step 6).
+   - **Member weightage** (0 to 100%, on the Account page, seen only by the member) measures
+     how the member, as a source of posts, uses ExiThreat. Three parts count equally, over the
+     last 30 days or since the account was made:
+     - *Activity:* half how often they use it (every other day is full marks), half how long
+       they stay (about 10 minutes on each of those days is full marks). Time is reported by
+       the website once a minute while it is open and in view (`POST /auth/heartbeat`).
+     - *Posting:* how often they post; a post a week is full marks, and more adds nothing.
+     - *Voting:* the share of posts that reached their group which they went through, the same
+       measure as in the group weight. Left out until they have had a post to go through.
+     Recalculated every hour, whenever the member opens their Account page, and when they push
+     their own post. It decides how far that push reaches (step 7).
 3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
    server makes a redacted copy, replacing emails, phone numbers, names, companies, addresses,
    URLs, dates and ID numbers (Indian and US formats) with labels such as `[NAME REDACTED]`.
@@ -67,30 +92,64 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    finds their posts again under "Mine". The server places the post in a random group
    that has at least 5 members and that the author is not in. If there is no such group yet,
    the post is refused and nothing is saved.
-   A post, its comments, votes and weightage can be read only by members of the group it is
-   in now and by its author. Nobody is told who the author is; the author's own page says
+   A post, its comments, votes and weightage can be read only by members of the groups it is
+   in now (one at first, up to five once it is forwarded) and by its author. Nobody is told who the author is; the author's own page says
    "Your Post".
-4. **First look.** A member of the post's current group can see the unredacted text once,
+4. **First look.** A member of a group the post is in can see the unredacted text once,
    served as an image strip rather than text. The look ends when the reader taps "Done
    reading" or leaves the page; afterwards only the redacted version is available. The server
    keeps the record, so it is the same on every device. A look that was opened but never
    closed (lost connection) can be reopened for 10 minutes.
-5. **Push.** Members of the current group vote to push the post on, once they have opened its
-   first look. The author cannot vote on their own post, and a vote can be withdrawn.
-6. **Move.** The votes are counted as each one is cast, against the members who used the
-   group in the last 14 days (never against fewer than 5). The vote that brings them to 50%
-   moves the post at once to another random group of at least 5 members that the author is
-   not in, preferring groups it has not been through; the vote percentage is saved to its
-   history, voting starts again, and the voter is told the post has left their group. If no
-   group can take it, it waits and moves as soon as one reaches 5 members. An hourly sweep
-   catches what no vote announces, such as members going inactive.
-7. **Manual push.** The author may move their own post once every 24 hours. It clears the
-   current votes and adds nothing to the post's weight.
-   The author sees, on the post and under "Mine", how many groups it has passed through
-   and when it arrived in its current one, but not which groups.
-8. **Weightage.** A post's weight is the sum of the vote percentages from the groups it left by
-   vote. Each group counts once, with at most 100, so going round the same groups adds nothing.
-9. **Comments** travel with a post from group to group. Group chat does not.
+5. **Push.** Members of each group the post is in vote to push it on, once they have opened
+   its first look. Each group votes separately. The author cannot vote on their own post, and a vote can be withdrawn.
+6. **Forwarding by a group.** The votes are counted as each one is cast, against the members
+   who used the group in the last 14 days (never against fewer than 5). The vote that brings
+   them to 50% forwards the post at once: it leaves that group (the vote percentage is saved
+   to its history and that group's votes are cleared) and goes to **several groups at once**.
+   How many follows the pushing group's weight: below 40% one group, 40 to 69% two, 70% and
+   above three. At least one of them has a higher weight than the pushing group; if there is
+   none, the highest-weighted group available is taken. The rest are random. Destinations
+   have at least 5 members, do not include the author, and are not groups the post is in
+   now. A post goes round the groups **in cycles**: it is sent only to groups it has not
+   reached in the current cycle, and once every eligible group has had it, a new cycle
+   starts and they are all open to it again. A post is never in more than **five
+   groups at once**. The voter is told the post has left their group. If no group can take
+   it, it waits and goes as soon as one reaches 5 members. An hourly sweep catches what no
+   vote announces, such as members going inactive.
+7. **Forwarding by the author** ("Manual Push"), once every 24 hours: the post stays in the
+   groups it is in and is also sent to 1 to 3 more, by the author's own weightage (same
+   steps), at least one of them better weighted than the best group it is in now. Still at
+   most five groups at once. It clears no votes and adds nothing to the post's weight. The
+   author is told how many groups were added; they appear on the map (next step).
+8. **Journey.** The author sees, on the post ("Journey so far") and under "Mine", how many
+   groups are reading it now, how many it has passed through, and when it last reached a
+   group. Tapping a post under "Mine" opens its map (`/post/[id]/map`, also linked from the
+   post): every group in the system as a dot, by name and weight only (no members, no member
+   counts). At the top, the round the post is on (a new round starts each time it has been
+   to every eligible group) and how many eligible groups it has covered and has still to
+   cover in it. Dots are coloured: reading it now (pulsing, with the date and time it
+   arrived), covered in this round, reached only in an earlier round, yet to cover, and
+   groups that cannot get it (the author's own, or under 5 members). The post's path is drawn
+   with arrows for who sent it where (a group's votes, the author's push, or where it was
+   posted); the groups it has not reached are a grid of dots below. Tapping a dot shows the
+   group's name, weight and when the post reached it. Only the author sees the map.
+   A member whose group has just pushed the post on is shown "This post has moved on".
+9. **Weightage.** A post's weight is the sum of the vote percentages from the groups that
+   forwarded it by vote. Each group counts once, with at most 100, so going round the same groups adds nothing.
+10. **Comments** travel with a post and are shared by every group it is in. Group chat does not.
+11. **Pseudonyms.** Every member is given a random pseudonym when they register (for example
+    `Voice-7KQ3PZ4M`). Their posts show it, in groups and on the common page, never their
+    username. Only the member sees the two together, on their Account page.
+12. **Common page** (`/common`). Once a post has reached **20% of the eligible groups** (groups
+    with at least 5 members, not counting the author's own), it is listed on the common page
+    and stays there. Every group it has been in counts, whether a group's votes or the author
+    sent it. The list is ordered by its **spread score**: the share of eligible groups it has
+    reached per day since it was posted, highest first. Before 20% this is how fast it got
+    there; afterwards it is recalculated after every push and hourly, so a post rises while it
+    keeps spreading quickly and falls as it slows or ages. Each entry shows the author's
+    pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
+    Every registered member sees the redacted version only. Officers see both the original
+    and the redacted version (next section).
 
 ### Installing it as an app
 
@@ -109,6 +168,7 @@ running `npm run dev`.
 | `/auth/register`, `/auth/login`, `/auth/reset` | Sign up, sign in, reset a forgotten password |
 | `/account`, `/account/contact` | Sign out and change password; add email and mobile to an older account |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
+| `/common` | The common page: posts that have reached 20% of the groups, fastest spreading first |
 | `/disclosures` | The user's own posts ("Mine") |
 | `/offline` | Shown by the service worker when there is no connection |
 | `/post/new`, `/post/[id]` | Write a disclosure; view one, vote and comment |
@@ -127,8 +187,9 @@ running `npm run dev`.
   the fingerprint and deletes the Firebase user the sign-in created
   (`backend/src/services/phoneVerification.ts`). A number that already belongs to a ProMic
   account signs in to that account, which is never deleted. Google bills each SMS to the
-  ProMic project. `exithreat.fly.dev` must be in Firebase console → Authentication →
-  Settings → Authorized domains.
+  ProMic project. The site's domain must be in Firebase console → Authentication → Settings →
+  Authorized domains (`exithreat.fly.dev` and `localhost` are). The project's web settings
+  in `firebasePhone.ts` are public identifiers, not secrets.
 
 ### API
 
@@ -143,10 +204,14 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 | `POST /auth/verify/phone` | A Firebase ID token from a phone sign-in, exchanged for a confirmation of that number |
 | `POST /auth/register`, `POST /auth/login`, `POST /auth/reset` | Sign up (with both confirmations), sign in (username, email or mobile), new password with a confirmation |
 | `GET /auth/me`, `POST /auth/contact`, `POST /auth/password`, `POST /auth/signout-all` | The account and whether its contact details are complete; add them; change password; sign out everywhere |
+| `POST /auth/heartbeat`, `GET /auth/weight` | Time on the site; the member's own weightage |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
 | `POST /posts/preview`, `GET /posts/mine` | The redacted version of a text before it is posted; the caller's own posts |
+| `GET /posts/:id/map` | Author only: every group by name and weight, which it covered in this round, passed through and is in now, the path between them, and the round |
+| `GET /common?offset=` | The common page, 30 at a time: redacted versions, by pseudonym (members) |
+| `GET /common/officer?offset=` | The same with the original versions, for an officer's ProMic session token |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |
@@ -155,8 +220,11 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 
 ### Database
 
-`User`, `Group`, `GroupMember`, `Post`, `PushVote`, `PostHistory`, `Comment`, `ViewRecord`,
-`ChatMessage`, `ProMicLink`. The tables are changed only through the migrations in
+`User` (with the `emailHash` and `phoneHash` fingerprints), `ContactVerification` (codes and
+confirmations, kept for a day at most), `Group`, `GroupMember`, `Post`, `PostPlacement` (the
+groups a post is in now, with when it arrived), `PushVote` (per post and group),
+`PostHistory` (groups a post has left: arrival, departure, vote share), `Comment`, `ViewRecord` (first looks, and when the redacted version was
+shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatMessage`, `ProMicLink`. The tables are changed only through the migrations in
 `backend/prisma/migrations` (see [Changing the database](#changing-the-database)).
 
 ## ProMic: a user's own backups (`/promic`)
@@ -177,8 +245,13 @@ Without the `PROMIC_*` settings these routes answer 503 and the rest of the app 
 
 Officers are **not** ExiThreat users. A ProMic administrator creates their account and they
 receive the credentials by email. This page talks directly to ProMic's backend (Cloud Functions
-in the ProMic repository, `functions/le.js`) and never uses the ExiThreat token or API, so an
-officer has no access to groups, posts or chat.
+in the ProMic repository, `functions/le.js`), and officers have no access to groups or chat.
+
+The one thing an officer reads from ExiThreat's own API is the **common page** ("ExiThreat
+Common Page" on the officer page, `components/CommonFeed.tsx`): every listed post with both its
+original and its redacted version, by pseudonym. `GET /common/officer` takes the officer's
+ProMic session token and asks ProMic's `leWhoAmI` whose it is (`services/officerAuth.ts`,
+remembered for 5 minutes), so the session secret stays in ProMic.
 
 Files: `frontend/src/app/law-enforcement/page.tsx` (sign in and recording access),
 `AreaDashboard.tsx` (map, alerts, live list), `liveAudio.ts` (live playback).
@@ -259,6 +332,15 @@ npm install
 npm run dev                   # http://localhost:3000
 ```
 
+### Signing up on your own computer
+
+Without `GMAIL_USER`, the backend prints each email code to its console as
+`[local code] email <id> <code>`. Mobile numbers go through Firebase even locally, so
+"Send code" texts a real phone (and is billed); to avoid that, add a test number with a fixed
+code in the Firebase console, or build the website with `NEXT_PUBLIC_PHONE_TEST=1` and start
+the backend with `PHONE_TOKEN_TEST=1`: then any 6 digits confirm a number. A hosted server
+refuses that shortcut.
+
 ### Configuration
 
 Backend (`backend/.env`, not in git):
@@ -273,6 +355,7 @@ Backend (`backend/.env`, not in git):
 | `PROMIC_DATABASE_URL`, `PROMIC_STORAGE_BUCKET` | ProMic's Firebase project (optional) |
 | `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key: ProMic backups, and checking mobile confirmations. Never commit it |
 | `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25) |
+| `PROMIC_LE_URL` | ProMic's law-enforcement endpoints, for checking officers on the common page. Has a built-in default |
 | `CONTACT_HASH_SECRET` | Key for the email and mobile fingerprints, at least 32 characters. **Never change or lose it**: every stored fingerprint would stop matching. Without it a hosted server takes no sign-ups |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail account and app password that send the email codes |
 | `REGISTER_LIMIT_PER_DAY`, `CODE_SENDS_PER_HOUR`, `LOGIN_ATTEMPTS` | Accounts per network address a day, codes asked for per address an hour, wrong passwords per 15 minutes (optional; 20, 20 and 10) |
@@ -283,6 +366,7 @@ Frontend (`frontend/.env.local`, or build arguments):
 |---|---|
 | `NEXT_PUBLIC_API_URL` | The API's address. Compiled into the pages at build time |
 | `NEXT_PUBLIC_PROMIC_LE_URL` | ProMic's law-enforcement endpoints. Has a built-in default |
+| `NEXT_PUBLIC_PHONE_TEST` | `1` only for local test builds: mobile numbers are confirmed without an SMS. Never set it for the hosted site |
 
 ### Commands
 
@@ -295,7 +379,7 @@ Frontend (`frontend/.env.local`, or build arguments):
 
 | Command (in `backend`) | What it checks |
 |---|---|
-| `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping, weight, size checks |
+| `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping, weight, size checks, how email addresses and mobile numbers are normalised |
 | `npm run test:api` | Starts the real server on an empty, throwaway PostgreSQL schema and walks through sign-up with codes, one account per email and mobile, sign-in, reset, older accounts, reading rules, the first look, voting and moving, and account limits. Needs `DATABASE_URL`; it builds the schema from the migrations and removes it afterwards |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs both, the type checks and the website build
@@ -325,9 +409,10 @@ cd frontend && fly deploy --ha=false
 ```
 
 Secrets on `exithreat-api` (`fly secrets set`): `JWT_SECRET`, `CONTACT_HASH_SECRET`,
-`GMAIL_USER`, `GMAIL_APP_PASSWORD`, `PROMIC_SERVICE_ACCOUNT_JSON`. Without the Gmail keys the
-hosted server sends no email codes (sign-up answers "not set up yet"); on a computer that is
-not hosting it, the code is printed to the server's console instead.
+`GMAIL_USER`, `GMAIL_APP_PASSWORD`, `PROMIC_SERVICE_ACCOUNT_JSON`. All five are set. The Gmail
+pair is the same as ProMic's Firebase secrets of those names. Without the Gmail keys the
+hosted server sends no email codes (sign-up answers "not set up yet"). Fly never shows a
+secret's value, so `CONTACT_HASH_SECRET` cannot be read back: never unset or replace it.
 The backend image applies any new migrations each time it starts, then starts the API.
 `GET /api/health` also asks the database, so Fly's check fails if the API cannot reach it.
 
@@ -339,9 +424,10 @@ These public servers are meant for light use.
 
 ## Security notes
 
-- The unredacted text of a post is never sent as text; it is rendered to an image on the
+- Members never get the unredacted text of a post as text; it is rendered to an image on the
   server and served once per member. This slows copying down; it cannot stop a screenshot. The
-  text is not encrypted in the database.
+  text is not encrypted in the database. Officers do get it as text, for posts listed on the
+  common page.
 - Reading is limited to a group's members, and membership is assigned at random
   (`backend/src/services/groupService.ts`). One person can have more accounts only with more
   email addresses and mobile numbers of their own; extra email addresses are easy to get,
@@ -373,15 +459,16 @@ These public servers are meant for light use.
 
 ## Known limitations
 
-- The group trust score (`weightageService.ts`: how many members read posts through and how
-  active they are) is recalculated as members use their group and is shown on the group
-  pages, but nothing depends on it.
+- The group weight and the member weightage decide how many groups a push reaches and which
+  group must be among them; they change nothing else (vote threshold, credibility weight,
+  what a member may do). A member's weightage is shown only to them. Group weights are as of
+  the last hourly recalculation, except the pushing group's, which is recalculated at the push.
 - There is no admin role in ExiThreat, and no way to leave or change group.
 - An account cannot be deleted by its owner, and its email or mobile cannot be changed.
 - Only Indian mobile numbers are accepted.
-- Sending from Gmail and confirming with Firebase have been tested only up to the providers:
-  locally, codes were printed and numbers confirmed with test tokens. The first real use is
-  on the hosted site.
+- Sending from Gmail and confirming with Firebase were tested only up to the providers:
+  locally, codes were printed and numbers confirmed with test tokens. The hosted site has them
+  set up, but no real sign-up has been made there yet.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
   15 accounts before a post can also move on.
 - Redaction is pattern-based, for English text with Indian and US formats. It misses names in

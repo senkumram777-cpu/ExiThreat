@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth } from '@/lib/api';
+import { auth, type MyWeight } from '@/lib/api';
 import { clearSession, getSession, saveSession } from '@/lib/session';
 
 const inputClass =
@@ -17,6 +17,8 @@ export default function AccountPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [weight, setWeight] = useState<MyWeight | null>(null);
+  const [pseudonym, setPseudonym] = useState<string | null>(null);
 
   useEffect(() => {
     const session = getSession();
@@ -25,6 +27,8 @@ export default function AccountPage() {
       return;
     }
     setUsername(session.username);
+    auth.myWeight().then(setWeight).catch(() => {});
+    auth.me().then((me) => setPseudonym(me.pseudonym)).catch(() => {});
   }, [router]);
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -73,6 +77,19 @@ export default function AccountPage() {
         <h1 className="text-xl font-mono font-bold text-accent-teal">Account</h1>
         <p className="text-xs font-mono text-gray-500 mt-1">Signed in as {username}</p>
       </div>
+
+      {pseudonym && (
+        <div className="p-4 bg-navy-800 rounded-xl border border-gray-800 font-mono">
+          <div className="text-xs text-gray-400 uppercase tracking-widest mb-2">Your Pseudonym</div>
+          <div className="text-lg font-bold text-accent-teal">{pseudonym}</div>
+          <p className="text-xs text-gray-500 mt-2 leading-relaxed">
+            Your posts show this name, in groups and on the common page, never your username.
+            Only you see the two together.
+          </p>
+        </div>
+      )}
+
+      {weight && <WeightCard weight={weight} />}
 
       <section className="flex flex-col gap-3">
         <button
@@ -143,5 +160,50 @@ export default function AccountPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/** The member's own weightage and what it is made of. Only they see it. */
+function WeightCard({ weight: w }: { weight: MyWeight }) {
+  const rows: Array<{ label: string; score: number | null; detail: string }> = [
+    {
+      label: 'Activity',
+      score: w.activityScore,
+      detail: `${w.activeDays} day${w.activeDays !== 1 ? 's' : ''} of use, ${w.minutes} min on the site`,
+    },
+    { label: 'Posting', score: w.postScore, detail: `${w.posts} post${w.posts !== 1 ? 's' : ''}` },
+    {
+      label: 'Voting',
+      score: w.voteScore,
+      detail: w.due > 0 ? `${w.reviewed} of ${w.due} posts gone through` : 'no post to go through yet',
+    },
+  ];
+  return (
+    <section className="p-4 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest">Your weightage</h2>
+        <span className="text-lg font-mono font-bold text-accent-teal">{pct(w.weight)}</span>
+      </div>
+      {rows.map((row) => (
+        <div key={row.label} className="flex flex-col gap-1">
+          <div className="flex justify-between text-xs font-mono">
+            <span className="text-gray-300">{row.label}</span>
+            <span className="text-gray-400">{row.score === null ? '—' : pct(row.score)}</span>
+          </div>
+          <div className="h-1.5 bg-navy-700 rounded-full overflow-hidden">
+            <div className="h-full bg-accent-teal rounded-full" style={{ width: pct(row.score ?? 0) }} />
+          </div>
+          <div className="text-xs font-mono text-gray-600">{row.detail}</div>
+        </div>
+      ))}
+      <p className="text-xs font-mono text-gray-500 leading-relaxed">
+        Over the last {w.windowDays} day{w.windowDays !== 1 ? 's' : ''}. Full marks: using ExiThreat
+        every other day for about 10 minutes, a post a week, and going through every post that
+        reaches your group (reading the original to the end, then its redacted version). Only you
+        see this.
+      </p>
+    </section>
   );
 }

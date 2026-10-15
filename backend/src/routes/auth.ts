@@ -6,6 +6,9 @@ import { prisma } from '../index';
 import { signToken, requireSignedIn, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { ensureGroup } from '../services/groupService';
+import { randomPseudonym } from '../services/pseudonym';
+import { addTimeToday, noteActiveDay } from '../services/groupWeightService';
+import { recalculateMemberWeight } from '../services/memberWeightService';
 import { LIMITS, USERNAME_PATTERN, passwordProblem } from '../services/validation';
 import {
   Channel,
@@ -103,7 +106,9 @@ async function contactStep(res: Response, step: () => Promise<void>): Promise<vo
   }
 }
 
+/** The answer to a sign-up or sign-in. Signing in is a day of use for the group's weight. */
 function session(user: { id: string; username: string; emailHash: string | null; phoneHash: string | null }) {
+  void noteActiveDay(user.id);
   return {
     token: signToken(user.id, user.username),
     userId: user.id,
@@ -187,12 +192,21 @@ router.post('/register', registerLimit, handle(async (req: Request, res: Respons
       return;
     }
     const passwordHash = await bcrypt.hash(password as string, 12);
-    const user = await prisma.user.create({ data: { username, passwordHash, emailHash, phoneHash } });
+    const user = await createWithPseudonym({ username, passwordHash, emailHash, phoneHash });
     await consumeProofs(emailVerificationId, phoneVerificationId);
     await ensureGroup(user.id);
     res.status(201).json(session(user));
   });
 }));
+
+/** Creates the account with a random pseudonym, drawing again in the rare case it is taken. */
+async function createWithPseudonym(data: { username: string; passwordHash: string; emailHash: string; phoneHash: string }) {
+  for (let attempt = 0; ; attempt++) {
+    const pseudonym = randomPseudonym();
+    if (attempt < 5 && (await prisma.user.findUnique({ where: { pseudonym }, select: { id: true } }))) continue;
+    return prisma.user.create({ data: { ...data, pseudonym } });
+  }
+}
 
 // POST /api/auth/login — with the username, email address or mobile number
 router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request, res: Response): Promise<void> => {
@@ -228,9 +242,30 @@ router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request,
 router.get('/me', requireSignedIn, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: req.userId! },
-    select: { id: true, username: true, emailHash: true, phoneHash: true },
+    select: { id: true, username: true, pseudonym: true, emailHash: true, phoneHash: true },
   });
-  res.json({ userId: user.id, username: user.username, hasEmail: !!user.emailHash, hasPhone: !!user.phoneHash });
+  res.json({
+    userId: user.id,
+    username: user.username,
+    // Shown with their posts in place of the username; only they see the two together.
+    pseudonym: user.pseudonym,
+    hasEmail: !!user.emailHash,
+    hasPhone: !!user.phoneHash,
+  });
+}));
+
+// POST /api/auth/heartbeat — the website, while it is open and in view, reports the time since
+// its last report (it sends one a minute; more than two minutes at once is not believed).
+router.post('/heartbeat', requireSignedIn, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const raw = Number((req.body as { seconds?: unknown } | undefined)?.seconds);
+  const seconds = Math.min(120, Math.max(0, Math.floor(Number.isFinite(raw) ? raw : 0)));
+  if (seconds > 0) await addTimeToday(req.userId!, seconds);
+  res.json({ ok: true });
+}));
+
+// GET /api/auth/weight — the signed-in member's own weightage, worked out now. Only for them.
+router.get('/weight', requireSignedIn, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  res.json(await recalculateMemberWeight(req.userId!));
 }));
 
 // POST /api/auth/contact — an older account adds the email address and mobile number it lacks.

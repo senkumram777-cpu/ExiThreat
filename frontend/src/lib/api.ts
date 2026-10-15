@@ -19,9 +19,27 @@ export interface AuthResponse {
 
 export type ContactChannel = 'email' | 'phone';
 
+/** The signed-in member's own weightage; every score is 0 to 1. */
+export interface MyWeight {
+  weight: number;
+  activityScore: number;
+  postScore: number;
+  /** null until a post has reached their group for them to go through. */
+  voteScore: number | null;
+  activeDays: number;
+  minutes: number;
+  posts: number;
+  reviewed: number;
+  due: number;
+  /** The days counted: the last 30, or since the account was made. */
+  windowDays: number;
+}
+
 export interface Me {
   userId: string;
   username: string;
+  /** Shown with their posts instead of the username. */
+  pseudonym: string;
   hasEmail: boolean;
   hasPhone: boolean;
 }
@@ -31,9 +49,12 @@ export interface Post {
   redactedContent: string;
   totalWeight: number;
   createdAt: string;
-  currentGroupId: string;
-  /** Whether the signed-in user wrote it. Who wrote it is never sent. */
+  /** The reader's own group among those the post is in (null for the author). */
+  groupId: string | null;
+  /** Whether the signed-in user wrote it. */
   isAuthor: boolean;
+  /** The author's pseudonym; never their username. */
+  author: string;
   isMember: boolean;
   /** Whether the signed-in user can still open the unredacted first look. */
   firstLook: 'available' | 'used';
@@ -47,8 +68,76 @@ export interface Post {
 export interface PostJourney {
   /** The number of groups it has left so far. */
   groupsPassed: number;
-  /** When it reached the group it is in now. */
+  /** The number of groups it is in now (up to five). */
+  inGroups: number;
+  /** When it last reached a group. */
   arrivedAt: string;
+}
+
+/** A post on the common page: it has reached 20% of the groups. */
+export interface CommonPost {
+  id: string;
+  /** Its place in the list, 1 first. */
+  rank: number;
+  /** The author's pseudonym. */
+  author: string;
+  redactedContent: string;
+  /** Officers only. */
+  originalContent?: string;
+  createdAt: string;
+  listedAt: string;
+  /** How long it took to reach 20% of the groups. */
+  listedAfterMs: number;
+  reachedGroups: number;
+  eligibleGroups: number;
+  /** Share of the groups reached per day since it was posted; the list is ordered by it. */
+  spreadScore: number;
+  totalWeight: number;
+}
+
+export interface CommonPage {
+  total: number;
+  offset: number;
+  posts: CommonPost[];
+}
+
+/** A group on the author's map: by name and weight only, under a key valid for one answer. */
+export interface GroupMapNode {
+  key: string;
+  name: string;
+  /** 0 to 1. */
+  weight: number;
+  /** The post is in this group now. */
+  current: boolean;
+  /** The post has been in this group and left it. */
+  passed: boolean;
+  /** Covered in the current round: arrived since it began, or reading it now. */
+  covered: boolean;
+  /** Can be sent the post (enough members, and not the author's own group). */
+  eligible: boolean;
+  /** One of the author's own groups. */
+  own: boolean;
+  /** When it arrived, for the groups it is in now; null for the others. */
+  arrivedAt: string | null;
+}
+
+/** Who sent the post where: `from` is a node key, or "you" for the author. */
+export interface GroupMapEdge {
+  from: string;
+  to: string;
+  by: 'start' | 'group' | 'author';
+  at: string;
+}
+
+/** Sent to the author only: every group, the path their post has taken, and its round. */
+export interface GroupMap {
+  /** 1 at first; one more each time the post has been to every eligible group. */
+  round: number;
+  eligibleGroups: number;
+  /** Eligible groups covered in this round. */
+  coveredGroups: number;
+  nodes: GroupMapNode[];
+  edges: GroupMapEdge[];
 }
 
 /** One of the signed-in user's own posts, as listed under "My Disclosures". */
@@ -60,7 +149,8 @@ export interface MyPost {
   lastManualPushAt: string | null;
   /** `history` is the number of groups the post has left so far. */
   _count: { pushVotes: number; comments: number; history: number };
-  /** When it reached the group it is in now. */
+  /** The number of groups it is in now, and when it last reached one. */
+  inGroups: number;
   arrivedAt: string;
 }
 
@@ -75,7 +165,13 @@ export interface Comment {
 export interface Group {
   id: string;
   name: string;
+  /** The group's weight, 0 to 1, from how active its members are. */
   trustScore: number;
+  /** Members' days of use, 0 to 1. */
+  loginScore: number;
+  /** How many posts members went through, 0 to 1; null before there were any. */
+  reviewScore: number | null;
+  weightUpdatedAt: string | null;
   createdAt: string;
   _count: { members: number; currentPosts: number };
 }
@@ -89,6 +185,8 @@ export interface GroupDetail extends Group {
     redactedContent: string;
     totalWeight: number;
     createdAt: string;
+    /** The author's pseudonym. */
+    author: string;
     _count: { pushVotes: number; comments: number };
   }>;
 }
@@ -234,6 +332,10 @@ export const auth = {
   login: (identifier: string, password: string) =>
     req<AuthResponse>('POST', '/auth/login', { identifier, password }),
   me: () => req<Me>('GET', '/auth/me'),
+  /** Time on the site since the last report, for the member's weightage. */
+  heartbeat: (seconds: number) => req<{ ok: boolean }>('POST', '/auth/heartbeat', { seconds }),
+  /** The member's own weightage, worked out now. */
+  myWeight: () => req<MyWeight>('GET', '/auth/weight'),
   /** For an older account: adds the email and/or mobile number it lacks. */
   addContact: (emailVerificationId: string | null, phoneVerificationId: string | null) =>
     req<AuthResponse>('POST', '/auth/contact', {
@@ -254,21 +356,25 @@ export const auth = {
 
 export const posts = {
   create: (content: string) =>
-    req<Pick<Post, 'id' | 'redactedContent' | 'totalWeight' | 'createdAt' | 'currentGroupId'>>('POST', '/posts', { content }),
+    req<Pick<Post, 'id' | 'redactedContent' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content }),
   /** What the redacted version of this text would be. Nothing is saved. */
   preview: (content: string) => req<{ redactedContent: string }>('POST', '/posts/preview', { content }),
   /** The signed-in user's own posts, newest first. */
   mine: () => req<MyPost[]>('GET', '/posts/mine'),
   get: (id: string) => req<Post>('GET', `/posts/${id}`),
+  /** The author's map of the groups (author only). */
+  map: (id: string) => req<GroupMap>('GET', `/posts/${id}/map`),
   /** Fetches the unredacted PNG strip as a Blob. Refused once the first look is used up. */
   getStrip: (id: string) => req<Blob>('GET', `/posts/${id}/strip`, undefined, true),
   /** Ends the first look. `keepalive` lets it go out while the page is being left. */
-  stripDone: (id: string) => {
+  /** "done": the reader tapped "Done reading" and is shown the redacted version; "left": they left. */
+  stripDone: (id: string, reason: 'done' | 'left') => {
     const token = getToken();
     fetch(`${BASE}/posts/${id}/strip/done`, {
       method: 'POST',
       keepalive: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
     }).catch(() => {});
   },
   getComments: (id: string) => req<Comment[]>('GET', `/posts/${id}/comments`),
@@ -296,11 +402,23 @@ export const push = {
   vote: (postId: string) => req<PushStatus>('POST', `/push/${postId}/vote`),
   retractVote: (postId: string) => req<{ voted: boolean }>('DELETE', `/push/${postId}/vote`),
   manualPush: (postId: string) =>
-    req<{ moved: boolean; newGroupId: string; message: string }>('POST', `/push/${postId}/manual`),
+    req<{ moved: boolean; groupsAdded: number; message: string }>('POST', `/push/${postId}/manual`),
   status: (postId: string) => req<PushStatus>('GET', `/push/${postId}/status`),
 };
 
 // ── Weightage ─────────────────────────────────────────────────────────────
+
+export const common = {
+  /** The common page, 30 posts from `offset`. */
+  list: (offset = 0) => req<CommonPage>('GET', `/common?offset=${offset}`),
+  /** The same for an officer, with the original versions; `token` is their ProMic session. */
+  officerList: async (token: string, offset = 0): Promise<CommonPage> => {
+    const res = await fetch(`${BASE}/common/officer?offset=${offset}`, { headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(res.status === 401 ? 'Sign in again.' : data.error ?? `Request failed (${res.status})`);
+    return data as CommonPage;
+  },
+};
 
 export const weightage = {
   get: (postId: string) => req<WeightageResult>('GET', `/weightage/${postId}`),

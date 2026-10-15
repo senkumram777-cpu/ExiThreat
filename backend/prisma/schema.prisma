@@ -20,6 +20,17 @@ model User {
   // they were required, which must add them before using the site.
   emailHash String? @unique
   phoneHash String? @unique
+  // The name shown with the member's posts, in groups and on the common page: random, given
+  // at registration, never their username (services/pseudonym.ts).
+  pseudonym String  @unique
+  // The member's own weightage, 0 to 1, from how they use ExiThreat (services/memberWeight.ts):
+  // activity (days of use and time on the site), posting, and going through posts to vote.
+  // Shown only to the member.
+  weight          Float     @default(0.0)
+  activityScore   Float     @default(0.0)
+  postScore       Float     @default(0.0)
+  voteScore       Float?
+  weightUpdatedAt DateTime?
 
   groupMemberships GroupMember[]
   posts            Post[]        @relation("OCPosts")
@@ -33,11 +44,16 @@ model User {
 model Group {
   id          String   @id @default(uuid())
   name        String
+  // The group's weight, 0 to 1: how active its members are (services/groupWeight.ts).
   trustScore  Float    @default(0.0)
+  // Its two halves: members' days of use, and how many posts they went through.
+  loginScore      Float     @default(0.0)
+  reviewScore     Float?
+  weightUpdatedAt DateTime?
   createdAt   DateTime @default(now())
 
   members      GroupMember[]
-  currentPosts Post[]
+  placements   PostPlacement[]
   postHistory  PostHistory[]
   pushVotes    PushVote[]
   chatMessages ChatMessage[]
@@ -65,20 +81,32 @@ model Post {
   originalContent  String    // plain text in the database; sent to clients only as a PNG
   redactedContent  String
   ocUserId         String
-  currentGroupId   String
   totalWeight      Float     @default(0.0)
   lastManualPushAt DateTime?
   createdAt        DateTime  @default(now())
+  // Forwarding goes round the eligible groups in cycles: groups reached since this moment are
+  // not sent the post again until every eligible group has had it (null: since it was posted).
+  cycleStartedAt   DateTime?
+  // Which round of the eligible groups it is on: 1, then 2 once all of them have had it, …
+  cycle            Int       @default(1)
+  // Its spread (services/spread.ts): eligible groups it has reached, of how many, and that
+  // share per day since it was posted. Listed on the common page once it reached 20%.
+  reachedGroups    Int       @default(0)
+  eligibleGroups   Int       @default(0)
+  spreadScore      Float     @default(0)
+  spreadUpdatedAt  DateTime?
+  listedAt         DateTime?
 
   oc          User          @relation("OCPosts", fields: [ocUserId], references: [id])
-  currentGroup Group        @relation(fields: [currentGroupId], references: [id])
+  // The groups it is in now: one at first, up to five once pushes forward it to several.
+  placements  PostPlacement[]
   pushVotes   PushVote[]
   history     PostHistory[]
   comments    Comment[]
   viewRecords ViewRecord[]
 
-  @@index([currentGroupId])
   @@index([ocUserId])
+  @@index([listedAt, spreadScore])
 }
 
 // Tracks each vote cast on a post within a specific group
@@ -102,8 +130,13 @@ model PostHistory {
   postId         String
   groupId        String
   pushPercentage Float    // % of members who voted push in this group
-  movedAt        DateTime @default(now())
+  arrivedAt      DateTime @default(now()) // when the post reached this group
+  movedAt        DateTime @default(now()) // when it left
   wasManualPush  Boolean  @default(false)
+  // How it reached this group: "start" (written there), "group" (fromGroupId pushed it on) or
+  // "author" (the author's push). Copied from its placement when it leaves.
+  arrivedBy      String   @default("start")
+  fromGroupId    String?
 
   post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -134,6 +167,9 @@ model ViewRecord {
   userId      String
   viewedAt    DateTime  @default(now())
   completedAt DateTime?
+  // When the reader was shown the redacted version after the first look: with completedAt,
+  // the post counts as gone through for the group's weight.
+  redactedSeenAt DateTime?
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -180,4 +216,33 @@ model ContactVerification {
   verifiedAt DateTime?
 
   @@index([targetHash, createdAt])
+}
+
+// A day (in India) on which a user used ExiThreat while signed in. Counted for their own
+// weightage and their group's over the last 30 days; removed after 60.
+model UserActiveDay {
+  userId  String
+  day     String // YYYY-MM-DD
+  seconds Int    @default(0) // time on the site that day, from the website's heartbeat
+
+  @@id([userId, day])
+  @@index([day])
+}
+
+// A group a post is in now. A post leaves a group when that group pushes it on (the row is
+// removed and a PostHistory row records the stay); the author's push only adds groups.
+model PostPlacement {
+  id        String   @id @default(uuid())
+  postId    String
+  groupId   String
+  arrivedAt DateTime @default(now())
+  // "start", "group" (from fromGroupId) or "author": the edges of the author's group map.
+  arrivedBy   String  @default("start")
+  fromGroupId String?
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, groupId])
+  @@index([groupId])
 }
