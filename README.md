@@ -96,7 +96,8 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    in now (one at first, up to five once it is forwarded) and by its author. Nobody is told who the author is; the author's own page says
    "Your Post".
 4. **First look.** A member of a group the post is in can see the unredacted text once,
-   served as an image strip rather than text. The look ends when the reader taps "Done
+   served as an image strip rather than text: one line, 16 characters wide, scrolling slowly
+   from right to left, that can't be selected or copied. The look ends when the reader taps "Done
    reading" or leaves the page; afterwards only the redacted version is available. The server
    keeps the record, so it is the same on every device. A look that was opened but never
    closed (lost connection) can be reopened for 10 minutes.
@@ -149,8 +150,7 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
     keeps spreading quickly and falls as it slows or ages. Each entry shows the author's
     pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
     Every registered member sees the redacted version only. Officers see both the original
-    and the redacted version (next section). The original runs as a slow, one-line ticker
-    16 characters wide that can't be selected or copied.
+    and the redacted version (next section).
 
 ### Installing it as an app
 
@@ -208,7 +208,7 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 | `POST /auth/heartbeat`, `GET /auth/weight` | Time on the site; the member's own weightage |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
-| `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip, close the first look |
+| `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip (a PNG in base64, drawn in rows, with each row's width), close the first look |
 | `POST /posts/preview`, `GET /posts/mine` | The redacted version of a text before it is posted; the caller's own posts |
 | `GET /posts/:id/map` | Author only: every group by name and weight, which it covered in this round, passed through and is in now, the path between them, and the round |
 | `GET /common?offset=` | The common page, 30 at a time: redacted versions, by pseudonym (members) |
@@ -380,7 +380,7 @@ Frontend (`frontend/.env.local`, or build arguments):
 
 | Command (in `backend`) | What it checks |
 |---|---|
-| `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping, weight, size checks, how email addresses and mobile numbers are normalised |
+| `npm test` | Unit tests, no database needed: redaction, the strip's line wrapping and rows, weight, size checks, how email addresses and mobile numbers are normalised |
 | `npm run test:api` | Starts the real server on an empty, throwaway PostgreSQL schema and walks through sign-up with codes, one account per email and mobile, sign-in, reset, older accounts, reading rules, the first look, voting and moving, and account limits. Needs `DATABASE_URL`; it builds the schema from the migrations and removes it afterwards |
 
 GitHub Actions (`.github/workflows/ci.yml`) runs both, the type checks and the website build

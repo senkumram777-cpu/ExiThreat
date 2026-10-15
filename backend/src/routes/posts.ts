@@ -110,7 +110,8 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
   }));
 }));
 
-// GET /api/posts/:id/strip — serves the PNG paper strip (unredacted, first-look only)
+// GET /api/posts/:id/strip — the first look (unredacted): the PNG paper strip in base64, drawn as
+// rows the website lays end to end into one scrolling line, with each row's width.
 router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
@@ -138,7 +139,7 @@ router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Respo
     }
 
     // The image is made before the view is recorded, so a failure here costs the reader nothing.
-    const pngBuffer = await generatePaperStrip(post.originalContent);
+    const strip = await generatePaperStrip(post.originalContent);
 
     // Keeps the time of the first opening if this is a second one inside the window.
     await prisma.viewRecord.upsert({
@@ -147,10 +148,13 @@ router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Respo
       update: {},
     });
 
-    res.setHeader('Content-Type', 'image/png');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.end(pngBuffer);
+    res.json({
+      image: strip.png.toString('base64'),
+      rows: strip.rows,
+      rowHeight: strip.rowHeight,
+      scale: strip.scale,
+    });
   } catch (err) {
     console.error('First-look strip failed:', err);
     if (!res.headersSent) res.status(500).json({ error: 'Could not prepare the first look' });

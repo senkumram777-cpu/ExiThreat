@@ -264,6 +264,18 @@ if (typeof window !== 'undefined' && 'caches' in window) {
   caches.delete('cross-origin').catch(() => {});
 }
 
+/**
+ * The first look: a PNG (base64) of the original drawn in rows, which the website lays end to
+ * end into one line. `rows` are the rows' widths and `rowHeight` their height, in image pixels;
+ * the image is drawn `scale` times the size it is shown.
+ */
+export interface PaperStrip {
+  image: string;
+  rows: number[];
+  rowHeight: number;
+  scale: number;
+}
+
 async function req<T>(
   method: string,
   path: string,
@@ -365,7 +377,7 @@ export const posts = {
   /** The author's map of the groups (author only). */
   map: (id: string) => req<GroupMap>('GET', `/posts/${id}/map`),
   /** Fetches the unredacted PNG strip as a Blob. Refused once the first look is used up. */
-  getStrip: (id: string) => req<Blob>('GET', `/posts/${id}/strip`, undefined, true),
+  getStrip: (id: string) => req<PaperStrip>('GET', `/posts/${id}/strip`),
   /** Ends the first look. `keepalive` lets it go out while the page is being left. */
   /** "done": the reader tapped "Done reading" and is shown the redacted version; "left": they left. */
   stripDone: (id: string, reason: 'done' | 'left') => {

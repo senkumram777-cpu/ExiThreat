@@ -84,9 +84,14 @@ test('strip: lines break between words and never exceed 25 characters', () => {
   assert.deepEqual(wrapText('😀'.repeat(30)).map((l) => Array.from(l).length), [25, 5]);
 });
 
-test('strip: any text becomes a PNG', async () => {
-  const png = await generatePaperStrip('A <b>tag</b> & a control \u0001 character.\nமேலாளர் मेरे');
-  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+test('strip: any text becomes a PNG of rows, each as wide as its text', async () => {
+  const strip = await generatePaperStrip('A <b>tag</b> & a control \u0001 character.\nமேலாளர் मेरे');
+  assert.equal(strip.png.subarray(1, 4).toString(), 'PNG');
+  assert.equal(strip.rows.length, 1);
+  const long = await generatePaperStrip(`${'word '.repeat(30)}end`);
+  assert.equal(long.rows.length, 3);
+  assert.ok(long.rows[2] < long.rows[0], JSON.stringify(long.rows));
+  assert.ok(long.rows.every((w) => w > 0 && w < 60 * 32), JSON.stringify(long.rows));
 });
 
 test('weight: one count per group, manual pushes carry nothing, at most 100 each', () => {

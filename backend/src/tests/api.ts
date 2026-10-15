@@ -297,7 +297,10 @@ async function run(): Promise<void> {
   // ── first look and votes ──
   check('no vote before the first look', (await call('POST', `/push/${postId}/vote`, reader.token)).status === 403);
   r = await call('GET', `/posts/${postId}/strip`, reader.token);
-  check('the first look is a PNG', r.status === 200 && !r.json && r.data.subarray(1, 4).toString() === 'PNG', r.status);
+  check('the first look is a PNG drawn in rows, without the text',
+    r.status === 200 && r.json && Buffer.from(r.data.image, 'base64').subarray(1, 4).toString() === 'PNG'
+      && Array.isArray(r.data.rows) && r.data.rows.length > 0 && !JSON.stringify(r.data).includes('Sunrise'),
+    r.status);
   check('it can be reopened until it is closed', (await call('GET', `/posts/${postId}/strip`, reader.token)).status === 200);
   await call('POST', `/posts/${postId}/strip/done`, reader.token, { reason: 'done' });
   const seen = await prisma.viewRecord.findFirstOrThrow({ where: { postId, userId: reader.userId } });
