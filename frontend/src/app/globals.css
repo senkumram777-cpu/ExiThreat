@@ -44,3 +44,10 @@ a {
 a:hover {
   text-decoration: underline;
 }
+
+/* The officer's original-text ticker on the common page (CommonFeed): the line slides in from
+   the right and out to the left, then starts again. */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}

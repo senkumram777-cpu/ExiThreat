@@ -9,6 +9,40 @@ import type { CommonPage, CommonPost } from '@/lib/api';
  * (`officer`) the original as well. `load` fetches one page from an offset.
  */
 
+const TICKER_WIDTH_CH = 16;
+const TICKER_CHARS_PER_SECOND = 4;
+
+/**
+ * The original text for officers: one line, 16 characters wide, scrolling slowly from right to
+ * left and starting again. It can't be selected, copied, dragged or right-clicked; nothing stops a
+ * screenshot.
+ */
+function OriginalTicker({ text }: { text: string }) {
+  const line = text.replace(/\s+/g, ' ').trim();
+  const seconds = Math.max(8, (line.length + TICKER_WIDTH_CH) / TICKER_CHARS_PER_SECOND);
+  const block = (e: React.SyntheticEvent) => e.preventDefault();
+  return (
+    <div
+      role="marquee"
+      aria-label="Original text"
+      className="overflow-hidden whitespace-nowrap font-mono text-sm text-gray-200 rounded border border-gray-800 bg-navy-800 px-2 py-1 select-none cursor-default"
+      style={{ width: `calc(${TICKER_WIDTH_CH}ch + 1rem)`, WebkitUserSelect: 'none', WebkitTouchCallout: 'none' }}
+      onCopy={block}
+      onCut={block}
+      onContextMenu={block}
+      onDragStart={block}
+      onMouseDown={block}
+    >
+      <span
+        className="inline-block"
+        style={{ paddingLeft: `${TICKER_WIDTH_CH}ch`, animation: `ticker ${seconds}s linear infinite` }}
+      >
+        {line}
+      </span>
+    </div>
+  );
+}
+
 function duration(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60_000));
   if (minutes < 60) return `${minutes} min`;
@@ -30,9 +64,7 @@ function PostCard({ post, officer }: { post: CommonPost; officer: boolean }) {
       {officer && post.originalContent !== undefined && (
         <div className="rounded-lg border border-accent-red/30 bg-navy-900 p-3">
           <div className="text-[11px] font-mono text-accent-red uppercase tracking-widest mb-2">Original</div>
-          <p className="font-mono text-sm text-gray-200 leading-relaxed whitespace-pre-wrap break-words">
-            {post.originalContent}
-          </p>
+          <OriginalTicker text={post.originalContent} />
         </div>
       )}
       <div className={officer ? 'rounded-lg border border-gray-800 bg-navy-900 p-3' : ''}>

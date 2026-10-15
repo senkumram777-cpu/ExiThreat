@@ -149,7 +149,8 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
     keeps spreading quickly and falls as it slows or ages. Each entry shows the author's
     pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
     Every registered member sees the redacted version only. Officers see both the original
-    and the redacted version (next section).
+    and the redacted version (next section). The original runs as a slow, one-line ticker
+    16 characters wide that can't be selected or copied.
 
 ### Installing it as an app
 
