@@ -36,6 +36,10 @@ export function signToken(userId: string, username: string): string {
 /** Answered, with this `code`, to an account that has no email or mobile number yet. */
 export const CONTACT_REQUIRED = 'CONTACT_REQUIRED';
 
+/** Answered, with this `code`, to an account an admin has suspended (routes/admin.ts). */
+export const SUSPENDED = 'SUSPENDED';
+export const SUSPENDED_MESSAGE = 'This account has been suspended by an admin.';
+
 /**
  * A valid sign-in to an account that has its email address and mobile number. Older
  * accounts without them are refused with CONTACT_REQUIRED until they add them.
@@ -68,12 +72,16 @@ function checkToken(req: AuthRequest, res: Response, next: NextFunction, needCon
   prisma.user
     .findUnique({
       where: { id: payload.userId },
-      select: { username: true, tokensValidFrom: true, emailHash: true, phoneHash: true },
+      select: { username: true, tokensValidFrom: true, emailHash: true, phoneHash: true, suspendedAt: true },
     })
     .then((user) => {
       const validFrom = user?.tokensValidFrom ? Math.floor(user.tokensValidFrom.getTime() / 1000) : 0;
       if (!user || (payload.iat ?? 0) < validFrom) {
         res.status(401).json({ error: 'Invalid or expired token' });
+        return;
+      }
+      if (user.suspendedAt) {
+        res.status(403).json({ error: SUSPENDED_MESSAGE, code: SUSPENDED });
         return;
       }
       if (needContact && (!user.emailHash || !user.phoneHash)) {

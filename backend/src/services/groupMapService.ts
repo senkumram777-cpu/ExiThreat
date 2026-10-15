@@ -3,7 +3,7 @@
  */
 
 import { prisma } from '../index';
-import { GROUP_MIN_MEMBERS } from './groupService';
+import { groupMinMembers } from './groupService';
 import { GroupMap, buildGroupMap } from './groupMap';
 
 export async function groupMapFor(post: { id: string; ocUserId: string }): Promise<GroupMap> {
@@ -31,7 +31,7 @@ export async function groupMapFor(post: { id: string; ocUserId: string }): Promi
       name: g.name,
       weight: g.trustScore,
       own: authorIn.has(g.id),
-      eligible: (sizes.get(g.id) ?? 0) >= GROUP_MIN_MEMBERS && !authorIn.has(g.id),
+      eligible: (sizes.get(g.id) ?? 0) >= groupMinMembers() && !authorIn.has(g.id),
     })),
     [
       ...history.map((a) => ({ ...a, current: false })),

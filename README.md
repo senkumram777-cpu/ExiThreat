@@ -169,12 +169,13 @@ running `npm run dev`.
 | `/auth/register`, `/auth/login`, `/auth/reset` | Sign up, sign in, reset a forgotten password |
 | `/account`, `/account/contact` | Sign out and change password; add email and mobile to an older account |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
-| `/common` | The common page: posts that have reached 20% of the groups, fastest spreading first |
+| `/common` | The common page: posts that have reached 20% of the groups (an admin setting), fastest spreading first |
 | `/disclosures` | The user's own posts ("Mine") |
 | `/offline` | Shown by the service worker when there is no connection |
 | `/post/new`, `/post/[id]` | Write a disclosure; view one, vote and comment |
 | `/promic` | A ProMic user's own backups |
 | `/law-enforcement` | Officer sign in (separate from ExiThreat accounts) |
+| `/admin` | The admin page, for ProMic's admins (see [Admin page](#admin-page)); not linked from the member pages |
 
 ### How codes are sent
 
@@ -217,6 +218,8 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |
 | `GET /promic/link`, `POST /promic/link`, `DELETE /promic/link`, `GET /promic/backups`, `GET /promic/backups/{audio\|video}/:id` | ProMic backups |
+| `GET /rules` | The rules the website mentions in its text, as an admin has set them (no sign-in) |
+| `/admin/…` | The admin page's API, for a ProMic admin's Firebase ID token (see [Admin page](#admin-page)) |
 | `GET /health` | Health check |
 
 ### Database
@@ -225,8 +228,35 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 confirmations, kept for a day at most), `Group`, `GroupMember`, `Post`, `PostPlacement` (the
 groups a post is in now, with when it arrived), `PushVote` (per post and group),
 `PostHistory` (groups a post has left: arrival, departure, vote share), `Comment`, `ViewRecord` (first looks, and when the redacted version was
-shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatMessage`, `ProMicLink`. The tables are changed only through the migrations in
+shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatMessage`, `ProMicLink`,
+`Setting` (rules an admin changed from their defaults) and `AdminAction` (the admin log). Admins also set
+`User.suspendedAt`, `Post.hiddenAt` and `Post.unlistedAt`. The tables are changed only through the migrations in
 `backend/prisma/migrations` (see [Changing the database](#changing-the-database)).
+
+## Admin page
+
+https://exithreat.fly.dev/admin is for ProMic's admins: the people on ProMic's `admins/{uid}`
+allowlist, who also use ProMic's admin panel. They sign in with the same Google account
+(Firebase Authentication of ProMic's project, `frontend/src/lib/adminAuth.ts`); ExiThreat's
+server checks the Firebase ID token and the allowlist on every request
+(`backend/src/services/adminAuth.ts`, a minute's memory per account). Admins see everything,
+including original posts and which account wrote each one. Every change is written to the
+admin log.
+
+| Tab | What an admin can do |
+|---|---|
+| Dashboard | Accounts, activity, groups, posts and votes at a glance; the last 14 days; the latest admin actions |
+| Accounts | Find an account by username, pseudonym, email address or mobile number (matched by fingerprint); see its groups, posts and days of use; suspend it (signs it out; it cannot sign in until restored), restore it, sign it out everywhere, or delete it with everything it wrote |
+| Posts | Every post with its original and redacted text and its author; hide a post (only its author and admins see it; it stops travelling and leaves the common page), unhide, unlist, delete; delete comments |
+| Common page | The listed posts in the order members and officers see them; unlist or relist one |
+| Groups & chat | Groups with their weight and members; rename a group, move a member to another group (their votes in the old one are dropped), read and delete chat messages, recalculate weights and spreads now |
+| Officers | ProMic's law-enforcement accounts: list them, create one, email a new password, turn one off or on. ExiThreat's server reads `le_users/` with the service account and calls ProMic's `adminCreateLeUser` / `adminSetLeUserDisabled` with the admin's own sign-in, so ProMic sends the emails and keeps its own audit |
+| Settings | The vote share that moves a post, the common page's share, the most groups at once, hours between an author's pushes, the smallest and largest group, and whether new accounts can be created (`backend/src/services/rules.ts`). A change applies at once and starts a recalculation |
+| Log | Every admin action, with who and when |
+
+A local copy can be tried without Google: start the backend with `ADMIN_TEST=1` and build the
+website with `NEXT_PUBLIC_ADMIN_TEST=1`; the page then signs in as a test admin. A hosted
+server never accepts test admins.
 
 ## ProMic: a user's own backups (`/promic`)
 
@@ -355,7 +385,7 @@ Backend (`backend/.env`, not in git):
 | `TRUST_PROXY` | Set to `1` behind a hosting proxy so rate limits apply per visitor |
 | `PROMIC_DATABASE_URL`, `PROMIC_STORAGE_BUCKET` | ProMic's Firebase project (optional) |
 | `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key: ProMic backups, and checking mobile confirmations. Never commit it |
-| `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25) |
+| `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25). Defaults only: an admin can change them on the admin page |
 | `PROMIC_LE_URL` | ProMic's law-enforcement endpoints, for checking officers on the common page. Has a built-in default |
 | `CONTACT_HASH_SECRET` | Key for the email and mobile fingerprints, at least 32 characters. **Never change or lose it**: every stored fingerprint would stop matching. Without it a hosted server takes no sign-ups |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail account and app password that send the email codes |
@@ -368,6 +398,7 @@ Frontend (`frontend/.env.local`, or build arguments):
 | `NEXT_PUBLIC_API_URL` | The API's address. Compiled into the pages at build time |
 | `NEXT_PUBLIC_PROMIC_LE_URL` | ProMic's law-enforcement endpoints. Has a built-in default |
 | `NEXT_PUBLIC_PHONE_TEST` | `1` only for local test builds: mobile numbers are confirmed without an SMS. Never set it for the hosted site |
+| `NEXT_PUBLIC_ADMIN_TEST` | `1` only for local test builds: the admin page signs in as a test admin (with `ADMIN_TEST=1` on a local backend) |
 
 ### Commands
 
@@ -429,6 +460,9 @@ These public servers are meant for light use.
   server and served once per member. This slows copying down; it cannot stop a screenshot. The
   text is not encrypted in the database. Officers do get it as text, for posts listed on the
   common page.
+- Admins (ProMic's `admins/` allowlist) see original posts and which account wrote each one,
+  and can suspend, hide and delete. Removing someone from the allowlist ends their access
+  within a minute. Every change they make is in the admin log, which admins cannot edit.
 - Reading is limited to a group's members, and membership is assigned at random
   (`backend/src/services/groupService.ts`). One person can have more accounts only with more
   email addresses and mobile numbers of their own; extra email addresses are easy to get,

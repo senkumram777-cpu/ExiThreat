@@ -31,6 +31,9 @@ model User {
   postScore       Float     @default(0.0)
   voteScore       Float?
   weightUpdatedAt DateTime?
+  // Set by an admin (routes/admin.ts): the account cannot sign in or use the site until restored.
+  suspendedAt     DateTime?
+  suspendedReason String?
 
   groupMemberships GroupMember[]
   posts            Post[]        @relation("OCPosts")
@@ -96,6 +99,11 @@ model Post {
   spreadScore      Float     @default(0)
   spreadUpdatedAt  DateTime?
   listedAt         DateTime?
+  // Set by an admin: a hidden post is shown to no one but its author and admins, cannot be
+  // voted on or pushed, and leaves the common page. An unlisted one only leaves the common page.
+  hiddenAt         DateTime?
+  hiddenReason     String?
+  unlistedAt       DateTime?
 
   oc          User          @relation("OCPosts", fields: [ocUserId], references: [id])
   // The groups it is in now: one at first, up to five once pushes forward it to several.
@@ -245,4 +253,27 @@ model PostPlacement {
 
   @@unique([postId, groupId])
   @@index([groupId])
+}
+
+// A rule an admin has changed from its default (services/settings.ts), e.g. the share of votes
+// that moves a post. Rules without a row keep their default.
+model Setting {
+  key       String   @id
+  value     Float
+  updatedAt DateTime @updatedAt
+  updatedBy String   // the admin's email address
+}
+
+// Everything an admin has changed, newest first on the admin page's log.
+model AdminAction {
+  id         String   @id @default(uuid())
+  at         DateTime @default(now())
+  adminUid   String   // the admin's ProMic (Firebase) uid
+  adminEmail String
+  action     String   // e.g. "user.suspend", "post.hide", "setting.change"
+  targetType String   // "user", "post", "comment", "chat", "group", "setting", "officer"
+  targetId   String
+  detail     String?  // a short description: the reason, the old and new value, …
+
+  @@index([at])
 }

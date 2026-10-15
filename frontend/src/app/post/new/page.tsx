@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posts as postsApi } from '@/lib/api';
+import { pct, useRules } from '@/lib/rules';
 
 const MIN_LENGTH = 20;
 const MAX_LENGTH = 5000;
 
 export default function NewPostPage() {
+  const rules = useRules();
   const router = useRouter();
   const [content, setContent] = useState('');
   // The redacted version of exactly the text in the box; cleared as soon as the text changes.
@@ -52,7 +54,7 @@ export default function NewPostPage() {
       <p className="text-xs font-mono text-gray-500 mb-6 leading-relaxed">
         Your submission will be sent to a random group that you are not in. Each of its members
         can read your exact words once, as an image; after that they see the redacted version.
-        Others see only your pseudonym, never your username. Once it has reached 20% of the
+        Others see only your pseudonym, never your username. Once it has reached {pct(rules.listShare)} of the
         groups it is listed on the common page: every member sees the redacted version there,
         and law-enforcement officers see your exact words as well.
       </p>

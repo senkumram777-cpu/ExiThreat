@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { getSession, onSessionChange } from '@/lib/session';
 
-/** The links in the top bar: different for a signed-in user and a visitor. */
+/** The links in the top bar: different for a signed-in user and a visitor; none on the admin page. */
 export default function NavLinks() {
+  const pathname = usePathname();
   // Unknown until the page is in the browser; nothing is shown until then.
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
@@ -15,6 +17,7 @@ export default function NavLinks() {
     return onSessionChange(read);
   }, []);
 
+  if (pathname?.startsWith('/admin')) return <span className="text-xs font-mono text-gray-500">Admin</span>;
   if (signedIn === null) return null;
 
   if (!signedIn) {

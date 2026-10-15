@@ -6,30 +6,30 @@
  *
  * Nobody chooses or creates a group: the server places each user in one at random, so that
  * nobody can put themselves in the group that reads a particular post. A group only receives
- * posts, and its votes only count, once it has GROUP_MIN_MEMBERS members.
+ * posts, and its votes only count, once it has the smallest number of members that takes posts.
+ *
+ * The numbers in these rules are settings an admin can change (rules.ts).
  */
 
 import { prisma } from '../index';
 import { weightOf } from './weight';
 import { recalculateGroupWeight } from './groupWeightService';
-import { Candidate, MAX_GROUPS_AT_ONCE, chooseInCycle, reachFor } from './forwarding';
+import { Candidate, chooseInCycle, reachFor } from './forwarding';
+import { rule } from './settings';
 import { recalculateSpread } from './spreadService';
 
-function envNumber(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
-}
-
 /** Below this a group gets no posts, and a vote is measured against at least this many. */
-export const GROUP_MIN_MEMBERS = envNumber('GROUP_MIN_MEMBERS', 5);
+export const groupMinMembers = (): number => rule('groupMinMembers');
 /** No one is added to a group that has this many members. */
-export const GROUP_MAX_MEMBERS = envNumber('GROUP_MAX_MEMBERS', 25);
+const groupMaxMembers = (): number => rule('groupMaxMembers');
 /** New groups are opened until there are this many, so that posts have somewhere to move. */
 const MIN_GROUPS = 3;
 /** A member who has not opened the group for this long is left out of the vote count. */
 const ACTIVE_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 /** Share of the counted members whose votes move a post on. */
-const PUSH_THRESHOLD = 0.5;
+const pushThreshold = (): number => rule('pushThreshold');
+/** A post is never in more than this many groups at the same time. */
+const maxGroupsAtOnce = (): number => rule('maxGroupsAtOnce');
 
 // Letters and digits that are not mistaken for one another.
 const NAME_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -71,18 +71,18 @@ export async function ensureGroup(userId: string): Promise<string> {
   if (existing) return existing.groupId;
 
   const sizes = await groupSizes();
-  const withRoom = [...sizes].filter(([, size]) => size < GROUP_MAX_MEMBERS);
-  const allEstablished = [...sizes.values()].every((size) => size >= GROUP_MIN_MEMBERS);
+  const withRoom = [...sizes].filter(([, size]) => size < groupMaxMembers());
+  const allEstablished = [...sizes.values()].every((size) => size >= groupMinMembers());
 
   let groupId: string;
   if (withRoom.length === 0 || (sizes.size < MIN_GROUPS && allEstablished)) {
     groupId = (await prisma.group.create({ data: { name: randomGroupName() } })).id;
   } else {
-    const total = withRoom.reduce((sum, [, size]) => sum + (GROUP_MAX_MEMBERS - size), 0);
+    const total = withRoom.reduce((sum, [, size]) => sum + (groupMaxMembers() - size), 0);
     let ticket = Math.random() * total;
     groupId = withRoom[withRoom.length - 1][0];
     for (const [id, size] of withRoom) {
-      ticket -= GROUP_MAX_MEMBERS - size;
+      ticket -= groupMaxMembers() - size;
       if (ticket < 0) {
         groupId = id;
         break;
@@ -100,7 +100,7 @@ export async function ensureGroup(userId: string): Promise<string> {
 
   // This member may be the one that makes the group big enough to receive posts. Posts that
   // have their votes but had nowhere to go can move now. Signing in does not wait for it.
-  if ((sizes.get(groupId) ?? 0) + 1 === GROUP_MIN_MEMBERS) void sweepPushes();
+  if ((sizes.get(groupId) ?? 0) + 1 === groupMinMembers()) void sweepPushes();
   return groupId;
 }
 
@@ -120,7 +120,7 @@ export async function pickGroupForPost(authorId: string): Promise<string | null>
   ]);
   const authorIn = new Set(authorGroups.map((m) => m.groupId));
   const eligible = [...sizes]
-    .filter(([id, size]) => size >= GROUP_MIN_MEMBERS && !authorIn.has(id))
+    .filter(([id, size]) => size >= groupMinMembers() && !authorIn.has(id))
     .map(([id]) => id);
   return eligible.length > 0 ? pickRandom(eligible) : null;
 }
@@ -136,7 +136,7 @@ export interface VoteTally {
 /**
  * Counts a post's votes in one of the groups it is in. They are measured against the members
  * who have used that group lately, leaving the author out, and never against fewer than
- * GROUP_MIN_MEMBERS, so a handful of people cannot move a post on their own.
+ * the smallest group size, so a handful of people cannot move a post on their own.
  */
 export async function voteTally(post: { id: string; ocUserId: string }, groupId: string): Promise<VoteTally> {
   const activeSince = new Date(Date.now() - ACTIVE_WINDOW_MS);
@@ -151,13 +151,13 @@ export async function voteTally(post: { id: string; ocUserId: string }, groupId:
       },
     }),
   ]);
-  const totalMembers = Math.max(activeMembers, GROUP_MIN_MEMBERS);
+  const totalMembers = Math.max(activeMembers, groupMinMembers());
   const share = Math.min(voteCount / totalMembers, 1);
   return {
     voteCount,
     totalMembers,
     pushPercentage: share * 100,
-    thresholdReached: share >= PUSH_THRESHOLD,
+    thresholdReached: share >= pushThreshold(),
   };
 }
 
@@ -189,7 +189,7 @@ async function forwardCandidates(
   const placedIn = new Set(placements.map((p) => p.groupId));
 
   const candidates = [...sizes]
-    .filter(([id, size]) => size >= GROUP_MIN_MEMBERS && !authorIn.has(id) && !placedIn.has(id) && id !== leaving)
+    .filter(([id, size]) => size >= groupMinMembers() && !authorIn.has(id) && !placedIn.has(id) && id !== leaving)
     .map(([id]) => ({ id, weight: weights.get(id) ?? 0, visited: visited.has(id) || id === leaving }));
   const placed = placements
     .filter((p) => p.groupId !== leaving)
@@ -220,7 +220,7 @@ export async function pushIfReady(post: { id: string; ocUserId: string }, groupI
   const groupWeight = await recalculateGroupWeight(groupId);
   const { candidates, placed } = await forwardCandidates(post, groupId);
   // Leaving this group frees a place, so there is always room for at least one.
-  const count = Math.min(reachFor(groupWeight), MAX_GROUPS_AT_ONCE - placed.length);
+  const count = Math.min(reachFor(groupWeight), maxGroupsAtOnce() - placed.length);
   const { destinations, newCycle } = chooseInCycle(candidates, count, groupWeight);
   if (destinations.length === 0) return { tally, outcome: 'waiting', destinations: [] };
 
@@ -292,7 +292,7 @@ type Arrival = { arrivedBy: 'group'; fromGroupId: string } | { arrivedBy: 'autho
 async function placeIn(tx: Tx, postId: string, destinations: string[], arrival: Arrival, at: Date): Promise<string[]> {
   const already = await tx.postPlacement.findMany({ where: { postId }, select: { groupId: true } });
   const inNow = new Set(already.map((p) => p.groupId));
-  const room = MAX_GROUPS_AT_ONCE - inNow.size;
+  const room = maxGroupsAtOnce() - inNow.size;
   const chosen = destinations.filter((id) => !inNow.has(id)).slice(0, Math.max(0, room));
   if (chosen.length > 0) {
     await tx.postPlacement.createMany({
@@ -307,11 +307,11 @@ export type ManualPushResult =
   | { ok: true; destinations: string[] }
   | { ok: false; status: number; error: string; remainingMs?: number };
 
-export const MANUAL_PUSH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+export const manualPushCooldownMs = (): number => rule('manualPushCooldownHours') * 60 * 60 * 1000;
 
 /**
  * The author's push: the post stays in the groups it is in and is also placed in as many new
- * groups as the author's weightage allows. Once per MANUAL_PUSH_COOLDOWN_MS; adds no weight
+ * groups as the author's weightage allows. Once per manualPushCooldownMs(); adds no weight
  * and clears no votes.
  */
 export async function forwardByAuthor(
@@ -319,8 +319,8 @@ export async function forwardByAuthor(
   authorWeight: number,
 ): Promise<ManualPushResult> {
   const now = Date.now();
-  if (post.lastManualPushAt && now - post.lastManualPushAt.getTime() < MANUAL_PUSH_COOLDOWN_MS) {
-    const remainingMs = MANUAL_PUSH_COOLDOWN_MS - (now - post.lastManualPushAt.getTime());
+  if (post.lastManualPushAt && now - post.lastManualPushAt.getTime() < manualPushCooldownMs()) {
+    const remainingMs = manualPushCooldownMs() - (now - post.lastManualPushAt.getTime());
     return {
       ok: false,
       status: 429,
@@ -330,9 +330,9 @@ export async function forwardByAuthor(
   }
 
   const { candidates, placed } = await forwardCandidates(post, null);
-  const room = MAX_GROUPS_AT_ONCE - placed.length;
+  const room = maxGroupsAtOnce() - placed.length;
   if (room <= 0) {
-    return { ok: false, status: 409, error: `Your post is already in ${MAX_GROUPS_AT_ONCE} groups, the most at once.` };
+    return { ok: false, status: 409, error: `Your post is already in ${maxGroupsAtOnce()} groups, the most at once.` };
   }
   // "Better weighted" than the best group the post is in now.
   const best = placed.reduce((max, p) => Math.max(max, p.weight), 0);
@@ -346,7 +346,7 @@ export async function forwardByAuthor(
     const claimed = await tx.post.updateMany({
       where: {
         id: post.id,
-        OR: [{ lastManualPushAt: null }, { lastManualPushAt: { lt: new Date(now - MANUAL_PUSH_COOLDOWN_MS) } }],
+        OR: [{ lastManualPushAt: null }, { lastManualPushAt: { lt: new Date(now - manualPushCooldownMs()) } }],
       },
       data: {
         lastManualPushAt: new Date(now),
@@ -385,10 +385,11 @@ export async function sweepPushes(): Promise<number> {
       const voted = await prisma.pushVote.groupBy({ by: ['postId', 'groupId'] });
       for (const { postId, groupId } of voted) {
         const [post, placement] = await Promise.all([
-          prisma.post.findUnique({ where: { id: postId }, select: { id: true, ocUserId: true } }),
+          prisma.post.findUnique({ where: { id: postId }, select: { id: true, ocUserId: true, hiddenAt: true } }),
           prisma.postPlacement.findUnique({ where: { postId_groupId: { postId, groupId } }, select: { id: true } }),
         ]);
-        if (!post) continue;
+        // A hidden post stays where it is.
+        if (!post || post.hiddenAt) continue;
         if (!placement) {
           // A vote that arrived just as the post left that group.
           await prisma.pushVote.deleteMany({ where: { postId, groupId } });

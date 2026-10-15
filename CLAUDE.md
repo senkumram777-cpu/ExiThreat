@@ -58,6 +58,19 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   host, `PHONE_TOKEN_TEST=1` accepts `test-phone:<number>` instead (the API test uses it).
   Routes use `requireAuth` (refuses accounts lacking contact details with `CONTACT_REQUIRED`)
   or `requireSignedIn` (account management only).
+- Admin page (`/admin`, `frontend/src/app/admin/page.tsx`, tabs in `components/admin/`;
+  API `backend/src/routes/admin.ts`): for ProMic admins, checked by
+  `services/adminAuth.ts` (Firebase ID token of ProMic's project + `admins/{uid}`); off the
+  host `ADMIN_TEST=1` accepts `test-admin:<name>` (the API test uses it). Every change goes
+  through `log()` into `AdminAction`. Suspended accounts (`User.suspendedAt`) are refused by
+  `requireAuth`/`requireSignedIn` and at sign-in (`code: "SUSPENDED"`); hidden posts
+  (`Post.hiddenAt`) have no reader group (`readerGroup`), are left out of group pages, the
+  common page (`ON_COMMON_PAGE` in `routes/common.ts`), the sweep and the author's push.
+- Rules an admin can change: defined in `services/rules.ts` (pure, unit-tested), values in
+  `services/settings.ts` (`rule('…')`, loaded at start, stored in `Setting`). Read rules
+  through `rule()` (or `groupMinMembers()`, `manualPushCooldownMs()` in `groupService.ts`),
+  never as constants. The website shows them through `GET /api/rules` and `useRules()`
+  (`frontend/src/lib/rules.ts`).
 - `frontend`: `npm run dev`, `npm run build`, `npm run lint`
 
 ## Sibling project: ProMic

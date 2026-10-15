@@ -1,7 +1,8 @@
 /**
  * API test: starts the real server against an empty, throwaway PostgreSQL schema and walks
- * through the rules that matter: who can read what, the first look, voting and moving, and
- * the accounts: one per email address and mobile number, sign-in and password reset. Run with `npm run test:api`.
+ * through the rules that matter: who can read what, the first look, voting and moving, the
+ * accounts: one per email address and mobile number, sign-in and password reset, and the admin
+ * page's controls. Run with `npm run test:api`.
  *
  * Needs DATABASE_URL to point at a PostgreSQL server it may create a schema on (the local
  * development database is fine: it works in a schema of its own and removes it afterwards).
@@ -11,6 +12,7 @@
 import { spawn, spawnSync } from 'child_process';
 import path from 'path';
 import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -47,6 +49,8 @@ const env = {
   PHONE_TOKEN_TEST: '1',
   // Officers are "test-officer:<id>" instead of a ProMic session.
   LE_OFFICER_TEST: '1',
+  // Admins are "test-admin:<name>" instead of a ProMic Firebase sign-in.
+  ADMIN_TEST: '1',
   NODE_ENV: 'test',
 };
 const prisma = new PrismaClient({ datasources: { db: { url: testUrl } } });
@@ -601,6 +605,135 @@ async function run(): Promise<void> {
   check('wrong passwords are cut off', tries.join() === '401,401,401,429', tries);
   r = await call('GET', '/posts/a%00b', u1.token);
   check('a database error is answered as JSON, without details', r.status === 500 && r.json && !/prisma/i.test(JSON.stringify(r.data)), r.data);
+
+  await adminChecks({ u1, reader, newcomer, spreadId, cycleId, postId, groups });
+}
+
+async function adminChecks(t: {
+  u1: TestUser; reader: TestUser; newcomer: TestUser; spreadId: string; cycleId: string; postId: string;
+  groups: Record<string, string>;
+}): Promise<void> {
+  const { u1, newcomer, spreadId, cycleId, groups } = t;
+  const ADMIN = 'test-admin:alice';
+  const onCommon = async () => ((await call('GET', '/common', newcomer.token)).data.posts ?? []).map((p: { id: string }) => p.id);
+
+  // ── who may use the admin page ──
+  check('the admin page refuses the signed-out, members and officers',
+    (await call('GET', '/admin/me')).status === 401 && (await call('GET', '/admin/me', u1.token)).status === 401
+      && (await call('GET', '/admin/me', 'test-officer:officer-1')).status === 401);
+  let r = await call('GET', '/admin/me', ADMIN);
+  check('a ProMic admin is let in', r.status === 200 && r.data.email === 'alice@example.com', r.data);
+
+  r = await call('GET', '/admin/overview', ADMIN);
+  check('the dashboard counts accounts, groups and posts',
+    r.status === 200 && r.data.users.total === (await prisma.user.count()) && r.data.posts.total === (await prisma.post.count())
+      && r.data.groups.total === (await prisma.group.count()) && r.data.days.length === 14, r.data);
+
+  // ── accounts ──
+  r = await call('GET', `/admin/users?q=${u1.username}`, ADMIN);
+  check('an account is found by its username', r.status === 200 && r.data.users.some((u: { id: string }) => u.id === u1.userId), r.data);
+  const known = newContact();
+  const person: TestUser = (await registerWith('find_me', known.email, known.phone)).data;
+  r = await call('GET', `/admin/users?q=${encodeURIComponent(known.email)}`, ADMIN);
+  check('and by its email address', r.status === 200 && r.data.users.length === 1 && r.data.users[0].id === person.userId, r.data);
+  r = await call('GET', `/admin/users?q=${known.phone}`, ADMIN);
+  check('and by its mobile number', r.status === 200 && r.data.users.length === 1 && r.data.users[0].id === person.userId, r.data);
+  r = await call('GET', `/admin/users/${u1.userId}`, ADMIN);
+  check('an admin sees the account and the posts it wrote',
+    r.status === 200 && r.data.username === u1.username && r.data.posts.length === 3 && typeof r.data.posts[0].snippet === 'string'
+      && !JSON.stringify(r.data).includes('passwordHash') && !JSON.stringify(r.data).includes('emailHash'), r.data);
+
+  await sleep(1100);
+  check('suspending signs the account out and refuses it',
+    (await call('POST', `/admin/users/${person.userId}/suspend`, ADMIN, { reason: 'test' })).status === 200
+      && (await call('GET', '/groups', person.token)).status === 401);
+  r = await call('POST', '/auth/login', undefined, { identifier: person.username, password: PASSWORD });
+  check('a suspended account cannot sign in', r.status === 403 && r.data.code === 'SUSPENDED', r.data);
+  await call('POST', `/admin/users/${person.userId}/restore`, ADMIN);
+  await sleep(1100);
+  r = await call('POST', '/auth/login', undefined, { identifier: person.username, password: PASSWORD });
+  check('once restored it can', r.status === 200 && (await call('GET', '/groups', r.data.token)).status === 200, r.data);
+  const personToken: string = r.data.token;
+  await sleep(1100);
+  check('signing an account out everywhere ends its tokens',
+    (await call('POST', `/admin/users/${person.userId}/signout`, ADMIN)).status === 200
+      && (await call('GET', '/groups', personToken)).status === 401);
+
+  // ── posts ──
+  r = await call('GET', `/admin/posts/${spreadId}`, ADMIN);
+  check('an admin sees the original and who wrote it',
+    r.status === 200 && typeof r.data.originalContent === 'string' && r.data.author.username === u1.username && r.data.onCommonPage === true, r.data);
+  const holder = await prisma.groupMember.findFirstOrThrow({
+    where: { group: { placements: { some: { postId: spreadId } } }, userId: { not: u1.userId } },
+    select: { userId: true, user: { select: { username: true } } },
+  });
+  // Signed directly: some test accounts have used up their sign-in attempts or changed password.
+  const holderToken = jwt.sign({ userId: holder.userId, username: holder.user.username }, env.JWT_SECRET);
+  check('a member of a group holding the post can read it', (await call('GET', `/posts/${spreadId}`, holderToken)).status === 200);
+  await call('POST', `/admin/posts/${spreadId}/hide`, ADMIN, { reason: 'test' });
+  check('a hidden post is taken off the common page', !(await onCommon()).includes(spreadId));
+  check('and out of its groups', (await call('GET', `/posts/${spreadId}`, holderToken)).status === 403
+    && !JSON.stringify((await call('GET', '/groups', holderToken)).data).includes(spreadId));
+  r = await call('GET', `/posts/${spreadId}`, u1.token);
+  check('its author still sees it, marked hidden', r.status === 200 && r.data.hidden === true, r.data);
+  check('and cannot push it', (await call('POST', `/push/${spreadId}/manual`, u1.token)).status === 403);
+  await call('POST', `/admin/posts/${spreadId}/unhide`, ADMIN);
+  check('unhidden, it is back', (await onCommon()).includes(spreadId) && (await call('GET', `/posts/${spreadId}`, holderToken)).status === 200);
+
+  await call('POST', `/admin/posts/${cycleId}/unlist`, ADMIN);
+  check('an unlisted post leaves the common page only',
+    !(await onCommon()).includes(cycleId)
+      && (await call('GET', '/admin/posts?filter=unlisted', ADMIN)).data.posts.some((p: { id: string }) => p.id === cycleId));
+  await call('POST', `/admin/posts/${cycleId}/relist`, ADMIN);
+  check('relisted, it is back', (await onCommon()).includes(cycleId));
+
+  const comment = await prisma.comment.create({ data: { postId: spreadId, userId: holder.userId, content: 'A comment to remove.' } });
+  check('an admin deletes a comment',
+    (await call('DELETE', `/admin/comments/${comment.id}`, ADMIN)).status === 200 && (await prisma.comment.count({ where: { id: comment.id } })) === 0);
+  const chat = await prisma.chatMessage.create({ data: { groupId: groups.A, userId: u1.userId, content: 'A message to remove.' } });
+  r = await call('GET', `/admin/chat?groupId=${groups.A}`, ADMIN);
+  check('and reads and deletes group chat',
+    r.data.messages.some((m: { id: string }) => m.id === chat.id)
+      && (await call('DELETE', `/admin/chat/${chat.id}`, ADMIN)).status === 200 && (await prisma.chatMessage.count({ where: { id: chat.id } })) === 0);
+
+  // ── settings ──
+  check('a setting outside its limits is refused', (await call('PUT', '/admin/settings/pushThreshold', ADMIN, { value: 2 })).status === 400
+    && (await call('PUT', '/admin/settings/groupMinMembers', ADMIN, { value: 3 })).status === 400
+    && (await call('PUT', '/admin/settings/nothing', ADMIN, { value: 1 })).status === 404);
+  check('registration can be paused', (await call('PUT', '/admin/settings/registrationOpen', ADMIN, { value: 0 })).status === 200
+    && (await call('GET', '/rules')).data.registrationOpen === false);
+  const extra = newContact();
+  r = await registerWith('too_late', extra.email, extra.phone);
+  check('and then no one can register', r.status === 403, r.data);
+  await call('PUT', '/admin/settings/registrationOpen', ADMIN, { value: 1 });
+  r = await call('GET', '/admin/settings', ADMIN);
+  check('settings list their values and who changed them',
+    r.status === 200 && r.data.find((s: { key: string }) => s.key === 'registrationOpen')?.updatedBy === 'alice@example.com', r.data);
+
+  // ── groups ──
+  check('a group can be renamed', (await call('PATCH', `/admin/groups/${groups.A}`, ADMIN, { name: 'Renamed' })).status === 200
+    && (await prisma.group.findUniqueOrThrow({ where: { id: groups.A } })).name === 'Renamed');
+  r = await call('POST', `/admin/groups/${groups.A}/move`, ADMIN, { userId: u1.userId, toGroupId: groups.B });
+  check('a member is not moved into a full group', r.status === 409, r.data);
+  await call('PUT', '/admin/settings/groupMaxMembers', ADMIN, { value: 10 });
+  r = await call('POST', `/admin/groups/${groups.A}/move`, ADMIN, { userId: u1.userId, toGroupId: groups.B });
+  check('with room, the member is moved',
+    r.status === 200 && (await prisma.groupMember.count({ where: { userId: u1.userId, groupId: groups.B } })) === 1
+      && (await prisma.groupMember.count({ where: { userId: u1.userId, groupId: groups.A } })) === 0, r.data);
+  r = await call('GET', `/admin/groups/${groups.B}`, ADMIN);
+  check('a group shows its members and posts', r.status === 200 && r.data.members.some((m: { user: { id: string } }) => m.user.id === u1.userId), r.data);
+
+  // ── deleting an account ──
+  const doomed = await register('doomed_user');
+  await prisma.post.create({ data: { originalContent: 'To be deleted.', redactedContent: 'To be deleted.', ocUserId: doomed.userId } });
+  check('deleting an account removes it and its posts',
+    (await call('DELETE', `/admin/users/${doomed.userId}`, ADMIN)).status === 200
+      && (await prisma.user.count({ where: { id: doomed.userId } })) === 0 && (await prisma.post.count({ where: { ocUserId: doomed.userId } })) === 0);
+
+  r = await call('GET', '/admin/log', ADMIN);
+  check('every change is in the log, with the admin', r.status === 200 && r.data.total >= 15
+    && r.data.actions.every((a: { adminEmail: string }) => a.adminEmail === 'alice@example.com')
+    && r.data.actions.some((a: { action: string }) => a.action === 'user.suspend'), r.data.total);
 }
 
 async function main(): Promise<void> {

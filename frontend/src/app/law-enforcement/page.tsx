@@ -24,6 +24,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import AreaDashboard from './AreaDashboard';
 import CommonFeed from '@/components/CommonFeed';
 import { common } from '@/lib/api';
+import { pct, useRules } from '@/lib/rules';
 
 const LE_BASE =
   process.env.NEXT_PUBLIC_PROMIC_LE_URL ?? 'https://asia-south1-promic-c5567.cloudfunctions.net';
@@ -106,6 +107,7 @@ const secondaryClass =
 const introClass = 'font-mono text-xs text-gray-400 leading-relaxed';
 
 export default function LawEnforcementPage() {
+  const rules = useRules();
   const [session, setSession] = useState<Session | null>(null);
   const [step, setStep] = useState<Step>('login');
   const [busy, setBusy] = useState(false);
@@ -421,7 +423,7 @@ export default function LawEnforcementPage() {
             ExiThreat Common Page
           </summary>
           <p className={`${introClass} mt-3 mb-4`}>
-            Disclosures that have reached at least 20% of ExiThreat&apos;s groups, the fastest
+            Disclosures that have reached at least {pct(rules.listShare)} of ExiThreat&apos;s groups, the fastest
             spreading first, with both the original and the redacted version. Authors appear by
             pseudonym only.
           </p>

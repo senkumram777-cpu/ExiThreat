@@ -77,10 +77,14 @@ router.post('/:postId/manual', requireAuth, handle(async (req: AuthRequest, res:
 
   const post = await prisma.post.findUnique({
     where: { id: postId },
-    select: { id: true, ocUserId: true, lastManualPushAt: true },
+    select: { id: true, ocUserId: true, lastManualPushAt: true, hiddenAt: true },
   });
   if (!post) {
     res.status(404).json({ error: 'Post not found' });
+    return;
+  }
+  if (post.hiddenAt) {
+    res.status(403).json({ error: 'This post has been hidden by an admin and cannot be pushed.' });
     return;
   }
 

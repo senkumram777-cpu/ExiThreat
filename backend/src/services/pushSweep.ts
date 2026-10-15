@@ -15,17 +15,22 @@ const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 // SWEEP_START_DELAY_SECONDS lets the API test keep it out of the way.
 const FIRST_SWEEP_DELAY_MS = (Number(process.env.SWEEP_START_DELAY_SECONDS) || 30) * 1000;
 
+/** One run: also started by an admin from the admin page, and after an admin changes a rule. */
+export function recalculateEverything(): Promise<void> {
+  return sweepPushes()
+    .then((moved) => {
+      if (moved > 0) console.log(`Push sweep moved ${moved} post(s)`);
+    })
+    // Group weights follow the members' days of use, which no request announces.
+    .then(() => recalculateAllGroupWeights())
+    .then(() => recalculateAllMemberWeights())
+    // The number of eligible groups changes as groups fill up; the common page follows it.
+    .then(() => recalculateAllSpreads());
+}
+
 export function startPushSweep(): void {
   const run = () => {
-    sweepPushes()
-      .then((moved) => {
-        if (moved > 0) console.log(`Push sweep moved ${moved} post(s)`);
-      })
-      // Group weights follow the members' days of use, which no request announces.
-      .then(() => recalculateAllGroupWeights())
-      .then(() => recalculateAllMemberWeights())
-      // The number of eligible groups changes as groups fill up; the common page follows it.
-      .then(() => recalculateAllSpreads());
+    void recalculateEverything();
   };
   setTimeout(run, FIRST_SWEEP_DELAY_MS);
   setInterval(run, SWEEP_INTERVAL_MS);

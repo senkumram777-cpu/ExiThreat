@@ -3,11 +3,7 @@
  * project. Google sends the SMS and checks the code; the browser then hands the resulting
  * ID token to our server (auth.verifyPhone), which keeps only the number's fingerprint and
  * removes the Firebase user. Nothing is kept in this browser: the Firebase session lives in
- * memory and is signed out at once.
- *
- * These are the project's public web settings (the same as ProMic's admin panel), not
- * secrets. The site's domain must be listed under Authentication → Settings → Authorized
- * domains in the Firebase console.
+ * memory and is signed out at once. The project's settings are in firebaseConfig.ts.
  */
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
@@ -20,13 +16,7 @@ import {
   type Auth,
   type ConfirmationResult,
 } from 'firebase/auth';
-
-const config = {
-  apiKey: 'AIzaSyD3OmePJ_LlaT7B1I4HPqT9N3QglxnjD9k',
-  authDomain: 'promic-c5567.firebaseapp.com',
-  projectId: 'promic-c5567',
-  appId: '1:945516079425:web:c7e31f3fc5c889b4b5d9c0',
-};
+import { firebaseConfig as config } from './firebaseConfig';
 
 const APP_NAME = 'exithreat-phone';
 let auth: Auth | null = null;

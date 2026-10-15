@@ -100,6 +100,7 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
       totalWeight: true,
       createdAt: true,
       lastManualPushAt: true,
+      hiddenAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
       placements: PLACEMENTS,
     },
@@ -205,6 +206,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       createdAt: true,
       ocUserId: true,
       lastManualPushAt: true,
+      hiddenAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
       placements: PLACEMENTS,
       oc: { select: { pseudonym: true } },
@@ -235,7 +237,8 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
     }
   }
 
-  const { ocUserId: _author, placements, _count, oc, ...rest } = post;
+  // Only the author can still open a hidden post (accessService), and is told it is hidden.
+  const { ocUserId: _author, placements, _count, oc, hiddenAt, ...rest } = post;
   res.json({
     ...rest,
     // The author's pseudonym, never their username.
@@ -246,6 +249,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
     // The reader's own group, for the way back; never the others the post is in.
     groupId: access.groupId,
     firstLook,
+    hidden: hiddenAt !== null,
     // Only the author is told how far the post has travelled and since when it is where it is.
     ...(access.isAuthor ? { journey: journeyOf(post, _count.history, placements) } : {}),
   });

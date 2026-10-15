@@ -80,6 +80,16 @@ export function promicAuth(): admin.auth.Auth {
   return getApp().auth();
 }
 
+/** ProMic's Realtime Database (the admins/ allowlist and officer accounts, for the admin page). */
+export function promicDb(): admin.database.Database {
+  return getApp().database();
+}
+
+/** Whether ProMic's service account is set up on this server. */
+export function promicConfigured(): boolean {
+  return !!loadServiceAccount() && !!process.env.PROMIC_DATABASE_URL && !!process.env.PROMIC_STORAGE_BUCKET;
+}
+
 function coord(value: unknown): number | null {
   // ProMic writes 0.0 for "no fix".
   return typeof value === 'number' && value !== 0 ? value : null;

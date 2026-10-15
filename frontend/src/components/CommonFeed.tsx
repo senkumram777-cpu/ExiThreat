@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { CommonPage, CommonPost } from '@/lib/api';
+import { pct, useRules } from '@/lib/rules';
 
 /**
- * The common page's list: posts that have reached 20% of the groups, fastest spreading first,
+ * The common page's list: posts that have reached the listing share of the groups (20% unless an
+ * admin changed it), fastest spreading first,
  * each tagged with its author's pseudonym. Members get the redacted version; officers
  * (`officer`) the original as well. `load` fetches one page from an offset.
  */
@@ -17,7 +19,7 @@ function duration(ms: number): string {
   return `${Math.floor(hours / 24)} days ${hours % 24} h`;
 }
 
-function PostCard({ post, officer }: { post: CommonPost; officer: boolean }) {
+function PostCard({ post, officer, listShare }: { post: CommonPost; officer: boolean; listShare: number }) {
   const share = post.eligibleGroups > 0 ? Math.round((post.reachedGroups / post.eligibleGroups) * 100) : 0;
   return (
     <article className="p-4 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3">
@@ -51,7 +53,7 @@ function PostCard({ post, officer }: { post: CommonPost; officer: boolean }) {
         </div>
         <div>
           <div className="text-sm font-bold text-gray-200">{duration(post.listedAfterMs)}</div>
-          <div className="text-[11px] text-gray-500">to reach 20%</div>
+          <div className="text-[11px] text-gray-500">to reach {pct(listShare)}</div>
         </div>
         <div>
           <div className="text-sm font-bold text-gray-200">{(post.spreadScore * 100).toFixed(1)}%</div>
@@ -71,6 +73,7 @@ export default function CommonFeed({
   officer?: boolean;
   onUnauthorized?: () => void;
 }) {
+  const rules = useRules();
   const [posts, setPosts] = useState<CommonPost[] | null>(null);
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -104,14 +107,14 @@ export default function CommonFeed({
   if (posts.length === 0) {
     return (
       <p className="text-sm font-mono text-gray-500 text-center py-8">
-        No post has reached 20% of the groups yet.
+        No post has reached {pct(rules.listShare)} of the groups yet.
       </p>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {posts.map((post) => <PostCard key={post.id} post={post} officer={officer} />)}
+      {posts.map((post) => <PostCard key={post.id} post={post} officer={officer} listShare={rules.listShare} />)}
       {error && <div className="text-xs font-mono text-accent-red">{error}</div>}
       {posts.length < total && (
         <button

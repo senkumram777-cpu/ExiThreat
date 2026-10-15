@@ -6,11 +6,13 @@ import Link from 'next/link';
 import { auth } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import ContactVerifier from '@/components/ContactVerifier';
+import { useRules } from '@/lib/rules';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
 
 export default function RegisterPage() {
+  const rules = useRules();
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -50,6 +52,11 @@ export default function RegisterPage() {
       <p className="text-xs font-mono text-gray-500 text-center mb-6">
         Use a pseudonym — do not use your real name.
       </p>
+      {!rules.registrationOpen && (
+        <div className="text-yellow-500 text-xs font-mono text-center mb-4">
+          New accounts cannot be created at the moment. Try again later.
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Pseudonym (3 to 30 letters, digits, dots, dashes or underscores, with at least one letter)

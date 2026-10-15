@@ -2,7 +2,8 @@
  * Access Service
  *
  * One place that decides who may read a post and what travels with it (comments, votes,
- * weightage): members of any group it is in now, and its author.
+ * weightage): members of any group it is in now, and its author. A post an admin has hidden
+ * is its author's alone.
  */
 
 import { prisma } from '../index';
@@ -23,10 +24,10 @@ export async function isGroupMember(groupId: string, userId: string): Promise<bo
   return membership !== null;
 }
 
-/** The group, among those the post is in now, that the user is a member of. */
+/** The group, among those the post is in now, that the user is a member of. None for a hidden post. */
 export async function readerGroup(postId: string, userId: string): Promise<string | null> {
   const placement = await prisma.postPlacement.findFirst({
-    where: { postId, group: { members: { some: { userId } } } },
+    where: { postId, post: { hiddenAt: null }, group: { members: { some: { userId } } } },
     select: { groupId: true },
   });
   return placement?.groupId ?? null;

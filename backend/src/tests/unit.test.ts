@@ -16,6 +16,7 @@ import { chooseDestinations, chooseInCycle, reachFor } from '../services/forward
 import { LIST_SHARE, reachesList, shareOf, spreadScoreOf } from '../services/spread';
 import { PSEUDONYM_PATTERN, randomPseudonym } from '../services/pseudonym';
 import { buildGroupMap } from '../services/groupMap';
+import { RULES, ruleError } from '../services/rules';
 
 /** Asserts that none of `secrets` survives redaction of `text`, and returns the result. */
 function hides(text: string, ...secrets: string[]): string {
@@ -283,6 +284,8 @@ test('spread: share, listing at 20%, score per day', () => {
   assert.equal(LIST_SHARE, 0.2);
   assert.ok(reachesList(shareOf(1, 5)));
   assert.ok(!reachesList(shareOf(1, 6)));
+  // An admin can change the share.
+  assert.ok(reachesList(0.1, 0.1) && !reachesList(0.1, 0.15));
   const day = 24 * 3600_000;
   // 20% in one day is 0.2 a day; the same share in two days scores half.
   assert.equal(spreadScoreOf(0.2, day), 0.2);
@@ -296,4 +299,19 @@ test('pseudonyms: format and variety', () => {
   const names = new Set(Array.from({ length: 200 }, randomPseudonym));
   assert.ok([...names].every((n) => PSEUDONYM_PATTERN.test(n)));
   assert.ok(names.size > 195);
+});
+
+test('rules: limits, whole numbers, and the smallest group no larger than the largest', () => {
+  const values = Object.fromEntries(Object.entries(RULES).map(([k, d]) => [k, d.default])) as Record<keyof typeof RULES, number>;
+  for (const key of Object.keys(RULES) as (keyof typeof RULES)[]) {
+    assert.equal(ruleError(key, RULES[key].default, values), null, key);
+  }
+  assert.equal(ruleError('pushThreshold', 0.66, values), null);
+  assert.notEqual(ruleError('pushThreshold', 1.5, values), null);
+  assert.notEqual(ruleError('pushThreshold', Number.NaN, values), null);
+  assert.notEqual(ruleError('maxGroupsAtOnce', 2.5, values), null);
+  assert.notEqual(ruleError('registrationOpen', 0.5, values), null);
+  assert.equal(ruleError('registrationOpen', 0, values), null);
+  assert.notEqual(ruleError('groupMinMembers', values.groupMaxMembers + 1, values), null);
+  assert.notEqual(ruleError('groupMaxMembers', values.groupMinMembers - 1, values), null);
 });

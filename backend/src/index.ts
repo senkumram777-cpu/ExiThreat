@@ -12,6 +12,8 @@ import pushRouter from './routes/push';
 import weightageRouter from './routes/weightage';
 import promicRouter from './routes/promic';
 import commonRouter from './routes/common';
+import adminRouter from './routes/admin';
+import { loadRules, rule } from './services/settings';
 
 export const prisma = new PrismaClient();
 
@@ -54,6 +56,18 @@ app.use('/api/push', pushRouter);
 app.use('/api/weightage', weightageRouter);
 app.use('/api/promic', promicRouter);
 app.use('/api/common', commonRouter);
+app.use('/api/admin', adminRouter);
+
+// The rules the website mentions in its text, as an admin has set them (services/rules.ts).
+app.get('/api/rules', (_req, res) => {
+  res.json({
+    pushThreshold: rule('pushThreshold'),
+    listShare: rule('listShare'),
+    maxGroupsAtOnce: rule('maxGroupsAtOnce'),
+    manualPushCooldownHours: rule('manualPushCooldownHours'),
+    registrationOpen: rule('registrationOpen') === 1,
+  });
+});
 
 // Also asks the database, so a server that is up but cannot reach it is reported as down.
 app.get('/api/health', (_req, res) => {
@@ -98,6 +112,7 @@ process.on('unhandledRejection', (reason) => {
 // ── Start ──────────────────────────────────────────────────────────────────
 async function main() {
   await prisma.$connect();
+  await loadRules();
   startPushSweep();
   app.listen(PORT, () => {
     console.log(`ExiThreat backend running on port ${PORT}`);

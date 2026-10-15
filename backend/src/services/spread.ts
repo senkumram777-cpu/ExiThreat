@@ -4,8 +4,8 @@
  *
  * - Share: of the groups that could take the post now (enough members, the author not in
  *   them), the part it has been in, however it got there (a group's votes or its author).
- * - Listed: the first time the share reaches LIST_SHARE (20%), the post goes on the common
- *   page, and stays there.
+ * - Listed: the first time the share reaches the listing share (20% unless an admin changed
+ *   it, rules.ts), the post goes on the common page, and stays there unless an admin unlists it.
  * - Spread score: the share per day since it was posted. Before 20% that is how fast it is
  *   getting there; afterwards it keeps rising while the post spreads quickly and falls as it
  *   slows or ages. The common page is ordered by it, highest first.
@@ -27,6 +27,6 @@ export function spreadScoreOf(share: number, ageMs: number): number {
   return share / (Math.max(ageMs, MIN_AGE_MS) / DAY_MS);
 }
 
-export function reachesList(share: number): boolean {
-  return share >= LIST_SHARE;
+export function reachesList(share: number, listShare = LIST_SHARE): boolean {
+  return share >= listShare;
 }

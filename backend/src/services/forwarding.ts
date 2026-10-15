@@ -5,7 +5,7 @@
  * A push forwards the post to several groups at once. The more weight the pusher has, the more
  * groups it reaches (`reachFor`): the group's weight when its members vote it on, the
  * author's own weightage when they push it themselves. A post is never in more than
- * MAX_GROUPS_AT_ONCE groups at the same time.
+ * a set number of groups at the same time (5 unless an admin changed it, rules.ts).
  *
  * At least one destination is better weighted than the pusher (`chooseDestinations`): a group
  * whose weight is higher than the pushing group's, or for the author's push, than the best
@@ -16,8 +16,6 @@
  * groups it has not reached in the current cycle. Once every eligible group has had it, a new
  * cycle starts and all of them are open to it again.
  */
-
-export const MAX_GROUPS_AT_ONCE = 5;
 
 /** Weight (0 to 1) from which a push reaches 2, and 3, groups. */
 export const REACH_STEPS = [0.4, 0.7];

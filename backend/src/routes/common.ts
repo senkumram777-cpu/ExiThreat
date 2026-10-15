@@ -8,16 +8,18 @@ const router = Router();
 
 const PAGE_SIZE = 30;
 
+export const ON_COMMON_PAGE = { listedAt: { not: null }, hiddenAt: null, unlistedAt: null };
+
 /**
- * The common page: every post that has reached 20% of the eligible groups (services/spread.ts),
- * fastest spreading first. Each is tagged with its author's pseudonym, never the username.
+ * The common page: every post that has reached 20% of the eligible groups (services/spread.ts;
+ * an admin can change the share), fastest spreading first, less any an admin hid or unlisted. Each is tagged with its author's pseudonym, never the username.
  * Members get the redacted version only; officers get the original as well.
  */
 async function listed(req: Request, withOriginal: boolean) {
   const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
   const [posts, total] = await Promise.all([
     prisma.post.findMany({
-      where: { listedAt: { not: null } },
+      where: ON_COMMON_PAGE,
       orderBy: [{ spreadScore: 'desc' }, { listedAt: 'asc' }, { id: 'asc' }],
       skip: offset,
       take: PAGE_SIZE,
@@ -34,7 +36,7 @@ async function listed(req: Request, withOriginal: boolean) {
         oc: { select: { pseudonym: true } },
       },
     }),
-    prisma.post.count({ where: { listedAt: { not: null } } }),
+    prisma.post.count({ where: ON_COMMON_PAGE }),
   ]);
   return {
     total,
@@ -43,7 +45,7 @@ async function listed(req: Request, withOriginal: boolean) {
       ...post,
       rank: offset + i + 1,
       author: oc.pseudonym,
-      // How long it took to reach 20% of the groups.
+      // How long it took to reach the listing share of the groups.
       listedAfterMs: post.listedAt!.getTime() - post.createdAt.getTime(),
     })),
   };

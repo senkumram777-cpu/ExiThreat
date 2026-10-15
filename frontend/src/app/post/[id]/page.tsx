@@ -7,10 +7,12 @@ import { posts as postsApi, push as pushApi, weightage as weightageApi, type Pos
 import SecureMarquee from '@/components/SecureMarquee';
 import PushButton from '@/components/PushButton';
 import CommentSection from '@/components/CommentSection';
+import { useRules } from '@/lib/rules';
 
 type ViewState = 'loading' | 'first-look' | 'redacted';
 
 export default function PostPage() {
+  const rules = useRules();
   const { id } = useParams<{ id: string }>();
   const [post, setPost] = useState<Post | null>(null);
   const [weightageData, setWeightageData] = useState<WeightageResult | null>(null);
@@ -139,6 +141,13 @@ export default function PostPage() {
         )}
       </div>
 
+      {post.hidden && (
+        <div className="p-3 rounded-xl border border-accent-red/40 text-xs font-mono text-accent-red">
+          An admin has hidden this post. Only you can see it; it no longer travels between groups or appears on the
+          common page.
+        </div>
+      )}
+
       {/* First-Look strip OR Redacted content */}
       {viewState === 'first-look' ? (
         <div className="flex flex-col items-center gap-2">
@@ -255,7 +264,7 @@ export default function PostPage() {
           <p className="text-xs font-mono text-gray-500 mb-3">
             Forward your post to more groups now: 1 to 3, depending on your own weightage, with
             at least one stronger group when there is one. They appear on its map. It stays in the groups it is in, up to
-            5 at once. Once every 24 hours; adds nothing to its credibility weightage.
+            {rules.maxGroupsAtOnce} at once. Once every {rules.manualPushCooldownHours} hours; adds nothing to its credibility weightage.
           </p>
           {manualPushNotice && (
             <div className="text-green-400 text-xs font-mono mb-2">{manualPushNotice}</div>

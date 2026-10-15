@@ -5,8 +5,9 @@
 
 import { prisma } from '../index';
 import { reachesList, shareOf, spreadScoreOf } from './spread';
-// groupService imports this file too; GROUP_MIN_MEMBERS is only read inside functions.
-import { GROUP_MIN_MEMBERS } from './groupService';
+// groupService imports this file too; groupMinMembers is only called inside functions.
+import { groupMinMembers } from './groupService';
+import { rule } from './settings';
 
 interface Common {
   /** Groups with enough members to take posts. */
@@ -20,7 +21,7 @@ async function common(): Promise<Common> {
     prisma.groupMember.groupBy({ by: ['groupId'], _count: { _all: true } }),
     prisma.groupMember.findMany({ select: { userId: true, groupId: true } }),
   ]);
-  const big = new Set(counts.filter((c) => c._count._all >= GROUP_MIN_MEMBERS).map((c) => c.groupId));
+  const big = new Set(counts.filter((c) => c._count._all >= groupMinMembers()).map((c) => c.groupId));
   const groupsOf = new Map<string, Set<string>>();
   for (const m of memberships) {
     if (!groupsOf.has(m.userId)) groupsOf.set(m.userId, new Set());
@@ -48,7 +49,7 @@ async function store(
       spreadScore: spreadScoreOf(share, now.getTime() - post.createdAt.getTime()),
       spreadUpdatedAt: now,
       // Once listed, always listed: only its place in the list changes.
-      ...(!post.listedAt && reachesList(share) ? { listedAt: now } : {}),
+      ...(!post.listedAt && reachesList(share, rule('listShare')) ? { listedAt: now } : {}),
     },
   });
 }

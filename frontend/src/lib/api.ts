@@ -5,7 +5,7 @@
 
 import { clearSession } from './session';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+export const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +58,8 @@ export interface Post {
   isMember: boolean;
   /** Whether the signed-in user can still open the unredacted first look. */
   firstLook: 'available' | 'used';
+  /** An admin has hidden it; then only its author can open it. */
+  hidden?: boolean;
   lastManualPushAt: string | null;
   _count: { pushVotes: number; comments: number };
   /** Sent to the author only. */
@@ -147,6 +149,8 @@ export interface MyPost {
   totalWeight: number;
   createdAt: string;
   lastManualPushAt: string | null;
+  /** When an admin hid it, if they did. */
+  hiddenAt: string | null;
   /** `history` is the number of groups the post has left so far. */
   _count: { pushVotes: number; comments: number; history: number };
   /** The number of groups it is in now, and when it last reached one. */
@@ -313,6 +317,15 @@ async function req<T>(
       window.location.assign('/auth/login?expired=1');
     }
     throw new Error('You have been signed out. Please sign in again.');
+  }
+
+  // An admin has suspended the account: its sign-in is over; signing in again says why.
+  if (res.status === 403 && data?.code === 'SUSPENDED' && token) {
+    clearSession();
+    if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/')) {
+      window.location.assign('/auth/login?expired=1');
+    }
+    throw new Error(data.error ?? 'This account has been suspended.');
   }
 
   // An older account that has not added its email and mobile number yet.

@@ -69,7 +69,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       select: { user: { select: { username: true } } },
     }),
     prisma.post.findMany({
-      where: { placements: { some: { groupId: id } } },
+      where: { placements: { some: { groupId: id } }, hiddenAt: null },
       select: {
         id: true,
         redactedContent: true,

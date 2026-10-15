@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { pct, useRules } from '@/lib/rules';
 
 export default function HomePage() {
+  const rules = useRules();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
@@ -78,7 +80,7 @@ export default function HomePage() {
           {
             icon: '▲',
             title: 'Democratic Push Engine',
-            body: 'When ≥50% of a group votes to Push, the content moves to a new random group. No AI sentiment — pure collective consensus.',
+            body: `When ≥${pct(rules.pushThreshold)} of a group votes to Push, the content moves on to new groups. No AI sentiment — pure collective consensus.`,
           },
           {
             icon: '⚖',

@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../index';
-import { signToken, requireSignedIn, AuthRequest } from '../middleware/auth';
+import { signToken, requireSignedIn, AuthRequest, SUSPENDED, SUSPENDED_MESSAGE } from '../middleware/auth';
+import { rule } from '../services/settings';
 import { handle } from '../middleware/handle';
 import { ensureGroup } from '../services/groupService';
 import { randomPseudonym } from '../services/pseudonym';
@@ -150,6 +151,11 @@ router.post('/verify/check', codeCheckLimit, handle(async (req: Request, res: Re
 
 // POST /api/auth/register — needs a confirmed email address and mobile number
 router.post('/register', registerLimit, handle(async (req: Request, res: Response): Promise<void> => {
+  // An admin can pause sign-ups (services/rules.ts).
+  if (rule('registrationOpen') !== 1) {
+    res.status(403).json({ error: 'New accounts cannot be created at the moment. Try again later.' });
+    return;
+  }
   const { username, password, emailVerificationId, phoneVerificationId } = req.body as {
     username?: unknown; password?: unknown; emailVerificationId?: string; phoneVerificationId?: string;
   };
@@ -231,6 +237,10 @@ router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request,
   const valid = await bcrypt.compare(password, user?.passwordHash ?? NO_SUCH_USER_HASH);
   if (!user || !valid) {
     res.status(401).json({ error: 'Invalid credentials' });
+    return;
+  }
+  if (user.suspendedAt) {
+    res.status(403).json({ error: SUSPENDED_MESSAGE, code: SUSPENDED });
     return;
   }
   // Accounts from before groups were assigned get theirs here.
