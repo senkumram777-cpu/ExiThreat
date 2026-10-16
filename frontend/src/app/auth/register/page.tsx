@@ -7,6 +7,7 @@ import { auth } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import ContactVerifier from '@/components/ContactVerifier';
 import { useRules } from '@/lib/rules';
+import PasswordInput from '@/components/PasswordInput';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
@@ -82,8 +83,7 @@ export default function RegisterPage() {
         </p>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Password (at least 8 characters)
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -95,8 +95,7 @@ export default function RegisterPage() {
         </label>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Password again
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={repeatPassword}
             onChange={(e) => setRepeatPassword(e.target.value)}

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, type MyWeight } from '@/lib/api';
 import { clearSession, getSession, saveSession } from '@/lib/session';
+import PasswordInput from '@/components/PasswordInput';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
@@ -114,8 +115,7 @@ export default function AccountPage() {
         </p>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           Current password
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
@@ -125,8 +125,7 @@ export default function AccountPage() {
         </label>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           New password (at least 8 characters)
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
@@ -138,8 +137,7 @@ export default function AccountPage() {
         </label>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           New password again
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={repeatPassword}
             onChange={(e) => setRepeatPassword(e.target.value)}

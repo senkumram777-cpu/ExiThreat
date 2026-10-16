@@ -25,6 +25,7 @@ import AreaDashboard from './AreaDashboard';
 import CommonFeed from '@/components/CommonFeed';
 import { common } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
+import PasswordInput from '@/components/PasswordInput';
 
 const LE_BASE =
   process.env.NEXT_PUBLIC_PROMIC_LE_URL ?? 'https://asia-south1-promic-c5567.cloudfunctions.net';
@@ -396,8 +397,7 @@ export default function LawEnforcementPage() {
             required
             className={inputClass}
           />
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="current-password"
             placeholder="Password"
             value={password}

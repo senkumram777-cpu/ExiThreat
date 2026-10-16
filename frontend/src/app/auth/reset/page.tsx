@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { auth, type ContactChannel } from '@/lib/api';
 import { saveSession } from '@/lib/session';
 import ContactVerifier from '@/components/ContactVerifier';
+import PasswordInput from '@/components/PasswordInput';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
@@ -76,8 +77,7 @@ export default function ResetPage() {
         <ContactVerifier key={channel} channel={channel} onVerified={setProof} />
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           New password (at least 8 characters)
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -89,8 +89,7 @@ export default function ResetPage() {
         </label>
         <label className="flex flex-col gap-1 text-xs font-mono text-gray-400">
           New password again
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             value={repeatPassword}
             onChange={(e) => setRepeatPassword(e.target.value)}
