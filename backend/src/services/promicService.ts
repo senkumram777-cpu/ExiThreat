@@ -80,7 +80,7 @@ export function promicAuth(): admin.auth.Auth {
   return getApp().auth();
 }
 
-/** ProMic's Realtime Database (the admins/ allowlist and officer accounts, for the admin page). */
+/** ProMic's Realtime Database (the admin/ entry and officer accounts, for the admin page). */
 export function promicDb(): admin.database.Database {
   return getApp().database();
 }

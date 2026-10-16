@@ -1,7 +1,7 @@
 /**
  * Admin sign-in for the admin page: a ProMic admin's Google account, through Firebase
  * Authentication of ProMic's project (firebaseConfig.ts). The server checks the Firebase ID
- * token and ProMic's admins/ allowlist on every request (backend services/adminAuth.ts).
+ * token against ProMic's one admin (admin/) on every request (backend services/adminAuth.ts).
  *
  * The sign-in lasts as long as the browser tab (session persistence), and is separate from
  * any member's sign-in in the same browser.

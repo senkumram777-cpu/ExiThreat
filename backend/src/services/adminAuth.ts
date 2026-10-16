@@ -1,14 +1,11 @@
 /**
- * Admins of ExiThreat are ProMic's admins: they sign in on the admin page with their ProMic
- * admin-panel Google account (Firebase Authentication of the ProMic project), and the page
- * sends the Firebase ID token. This server checks the token with ProMic's service account and
- * that the account is on ProMic's `admins/{uid}` allowlist, the same list ProMic's admin panel
- * and functions use. Being on the list is remembered for a minute per account, so removing
- * someone takes effect within a minute.
- *
- * Only one account may be the admin: ADMIN_EMAIL, signed in with Google. Anyone else is refused
- * even if they are on the list. The same address is in ProMic's functions/adminAccount.js and
- * admin-web/src/lib/adminAccount.ts; change all three together.
+ * The admin of ExiThreat is ProMic's one admin: they sign in on the admin page with their Google
+ * account (Firebase Authentication of the ProMic project), and the page sends the Firebase ID
+ * token. This server checks the token with ProMic's service account against ProMic's admin/
+ * entry, {uid, email}, which is set in the Firebase console. Only that account, signed in with
+ * Google with a verified email, gets in. ProMic's database rules and functions/adminAccount.js
+ * make the same check. admin/ is read at most once a minute, so changing it in the console takes
+ * effect within a minute.
  */
 
 import { NextFunction, Request, Response } from 'express';
@@ -25,26 +22,25 @@ export interface AdminRequest extends Request {
   adminToken?: string;
 }
 
-export const ADMIN_EMAIL = 'senkumram777@gmail.com';
-
 const REMEMBER_MS = 60 * 1000;
 const hosted = process.env.NODE_ENV === 'production' || !!process.env.FLY_APP_NAME;
 // Lets the API test and a local copy act as an admin without ProMic. Never honoured on the host.
 const TEST_TOKENS = !hosted && process.env.ADMIN_TEST === '1';
 const TEST_PREFIX = 'test-admin:';
 
-const listed = new Map<string, number>();
+let record: { uid: string; email: string } | null = null;
+let readAt = 0;
 
-async function onAllowlist(uid: string): Promise<boolean> {
-  const until = listed.get(uid);
-  if (until && until > Date.now()) return true;
-  const snap = await promicDb().ref(`admins/${uid}`).get();
-  if (snap.val() !== true) {
-    listed.delete(uid);
-    return false;
-  }
-  listed.set(uid, Date.now() + REMEMBER_MS);
-  return true;
+/** ProMic's admin/ entry, read at most once a minute. */
+async function adminRecord(): Promise<{ uid: string; email: string }> {
+  if (record && Date.now() - readAt < REMEMBER_MS) return record;
+  const value = (await promicDb().ref('admin').get()).val() ?? {};
+  record = {
+    uid: typeof value.uid === 'string' ? value.uid : '',
+    email: typeof value.email === 'string' ? value.email.toLowerCase() : '',
+  };
+  readAt = Date.now();
+  return record;
 }
 
 /** The admin a Firebase ID token belongs to, or null if it is not a valid admin's token. */
@@ -56,18 +52,17 @@ export async function adminFor(token: string): Promise<Admin | null> {
   }
   try {
     const decoded = await promicAuth().verifyIdToken(token);
+    if (decoded.email_verified !== true || decoded.firebase?.sign_in_provider !== 'google.com') return null;
+    const admin = await adminRecord();
     const email = (decoded.email ?? '').toLowerCase();
-    if (email !== ADMIN_EMAIL || decoded.email_verified !== true || decoded.firebase?.sign_in_provider !== 'google.com') {
-      return null;
-    }
-    if (!(await onAllowlist(decoded.uid))) return null;
+    if (!admin.uid || !admin.email || decoded.uid !== admin.uid || email !== admin.email) return null;
     return { uid: decoded.uid, email: decoded.email ?? decoded.uid };
   } catch {
     return null;
   }
 }
 
-/** Lets only ProMic admins through, with req.admin set. */
+/** Lets only ProMic's admin through, with req.admin set. */
 export function requireAdmin(req: AdminRequest, res: Response, next: NextFunction): void {
   const header = req.headers.authorization ?? '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';

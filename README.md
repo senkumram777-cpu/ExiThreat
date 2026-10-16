@@ -235,11 +235,12 @@ shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatM
 
 ## Admin page
 
-https://exithreat.fly.dev/admin is for ProMic's admins: the people on ProMic's `admins/{uid}`
-allowlist, who also use ProMic's admin panel. They sign in with the same Google account
-(Firebase Authentication of ProMic's project, `frontend/src/lib/adminAuth.ts`); ExiThreat's
-server checks the Firebase ID token and the allowlist on every request
-(`backend/src/services/adminAuth.ts`, a minute's memory per account). Admins see everything,
+https://exithreat.fly.dev/admin is for ProMic's admin: the one account in ProMic's `admin/`
+entry (`{uid, email}`, set in the Firebase console), who also uses ProMic's admin panel. They
+sign in with that Google account (Firebase Authentication of ProMic's project,
+`frontend/src/lib/adminAuth.ts`); ExiThreat's server checks the Firebase ID token against
+`admin/` on every request (`backend/src/services/adminAuth.ts`, read at most once a minute),
+and the page signs any other account out. The admin sees everything,
 including original posts and which account wrote each one. Every change is written to the
 admin log.
 
@@ -460,9 +461,9 @@ These public servers are meant for light use.
   server and served once per member. This slows copying down; it cannot stop a screenshot. The
   text is not encrypted in the database. Officers do get it as text, for posts listed on the
   common page.
-- Admins (ProMic's `admins/` allowlist) see original posts and which account wrote each one,
-  and can suspend, hide and delete. Removing someone from the allowlist ends their access
-  within a minute. Every change they make is in the admin log, which admins cannot edit.
+- The admin (ProMic's `admin/` entry, one account) sees original posts and which account wrote
+  each one, and can suspend, hide and delete. Changing `admin/` in the Firebase console moves
+  that access to another account within a minute. Every change they make is in the admin log, which admins cannot edit.
 - Reading is limited to a group's members, and membership is assigned at random
   (`backend/src/services/groupService.ts`). One person can have more accounts only with more
   email addresses and mobile numbers of their own; extra email addresses are easy to get,

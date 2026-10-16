@@ -59,10 +59,11 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   Routes use `requireAuth` (refuses accounts lacking contact details with `CONTACT_REQUIRED`)
   or `requireSignedIn` (account management only).
 - Admin page (`/admin`, `frontend/src/app/admin/page.tsx`, tabs in `components/admin/`;
-  API `backend/src/routes/admin.ts`): for ProMic admins, checked by
-  `services/adminAuth.ts` (Firebase ID token of ProMic's project + `admins/{uid}`, and only
-  `ADMIN_EMAIL`'s Google sign-in: one admin, also pinned in ProMic's `functions/adminAccount.js`
-  and `admin-web/src/lib/adminAccount.ts`; the page signs any other account out); off the
+  API `backend/src/routes/admin.ts`): for ProMic's one admin, checked by
+  `services/adminAuth.ts` (Firebase ID token of ProMic's project against ProMic's `admin/`
+  entry, `{uid, email}`, set in the Firebase console; Google sign-in with a verified email only;
+  ProMic's rules and `functions/adminAccount.js` check the same; the page signs any other
+  account out); off the
   host `ADMIN_TEST=1` accepts `test-admin:<name>` (the API test uses it). Every change goes
   through `log()` into `AdminAction`. Suspended accounts (`User.suspendedAt`) are refused by
   `requireAuth`/`requireSignedIn` and at sign-in (`code: "SUSPENDED"`); hidden posts
