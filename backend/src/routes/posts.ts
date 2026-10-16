@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
 import { prisma } from '../index';
 import { requireAuth, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
@@ -113,6 +113,13 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
 
 // GET /api/posts/:id/strip — the first look (unredacted): the PNG paper strip in base64, drawn as
 // rows the website lays end to end into one scrolling line, with each row's width.
+// HEAD /api/posts/:id/strip — refused. Express would otherwise answer it with the GET below,
+// which records the first look as opened: a link preview or prefetch could use up a member's
+// one look (and count as having read it) without anything being shown.
+router.head('/:id/strip', (_req: Request, res: Response): void => {
+  res.status(405).set('Allow', 'GET').end();
+});
+
 router.get('/:id/strip', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
@@ -285,10 +292,10 @@ router.get('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Re
   }
   const comments = await prisma.comment.findMany({
     where: { postId: id },
-    include: { user: { select: { id: true, username: true } } },
+    include: { user: { select: { pseudonym: true } } },
     orderBy: { createdAt: 'asc' },
   });
-  res.json(comments);
+  res.json(comments.map((c) => commentOut(c, req.userId!)));
 }));
 
 // POST /api/posts/:id/comments — add a tagged comment (travels with post)
@@ -316,9 +323,20 @@ router.post('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: R
 
   const comment = await prisma.comment.create({
     data: { postId: id, userId, content: content.text },
-    include: { user: { select: { id: true, username: true } } },
+    include: { user: { select: { pseudonym: true } } },
   });
-  res.status(201).json(comment);
+  res.status(201).json(commentOut(comment, userId));
 }));
+
+/**
+ * A comment as readers see it: by pseudonym, never the username or account id. Comments travel
+ * with the post to other groups, so anything here reaches people outside the writer's group.
+ */
+function commentOut(
+  c: { id: string; postId: string; userId: string; content: string; createdAt: Date; user: { pseudonym: string } },
+  readerId: string,
+) {
+  return { id: c.id, postId: c.postId, content: c.content, createdAt: c.createdAt, author: c.user.pseudonym, mine: c.userId === readerId };
+}
 
 export default router;

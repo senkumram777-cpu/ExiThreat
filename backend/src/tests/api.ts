@@ -300,6 +300,9 @@ async function run(): Promise<void> {
 
   // ── first look and votes ──
   check('no vote before the first look', (await call('POST', `/push/${postId}/vote`, reader.token)).status === 403);
+  r = await call('HEAD', `/posts/${postId}/strip`, reader.token);
+  check('a HEAD request for the first look is refused and does not open it',
+    r.status === 405 && (await prisma.viewRecord.count({ where: { postId, userId: reader.userId } })) === 0, r.status);
   r = await call('GET', `/posts/${postId}/strip`, reader.token);
   check('the first look is a PNG drawn in rows, without the text',
     r.status === 200 && r.json && Buffer.from(r.data.image, 'base64').subarray(1, 4).toString() === 'PNG'
@@ -310,6 +313,25 @@ async function run(): Promise<void> {
   const seen = await prisma.viewRecord.findFirstOrThrow({ where: { postId, userId: reader.userId } });
   check('"Done reading" counts as having gone through the post', !!seen.completedAt && !!seen.redactedSeenAt);
   check('the day of use is recorded', (await prisma.userActiveDay.count({ where: { userId: reader.userId } })) === 1);
+
+  // ── members see pseudonyms only, never usernames or account ids ──
+  const readerPseudonym = (await prisma.user.findUniqueOrThrow({ where: { id: reader.userId } })).pseudonym;
+  const leaks = (data: unknown, ...who: TestUser[]) =>
+    who.some((u) => JSON.stringify(data).includes(u.username) || JSON.stringify(data).includes(u.userId));
+  r = await call('POST', `/posts/${postId}/comments`, reader.token, { content: 'Seen this too.' });
+  check('a new comment shows the pseudonym, not the username', r.status === 201 && r.data.author === readerPseudonym
+    && r.data.mine === true && !leaks(r.data, reader), r.data);
+  r = await call('GET', `/posts/${postId}/comments`, u1.token);
+  check('comments show pseudonyms only', r.status === 200 && r.data.length >= 1 && r.data.every((c: { author: string }) => !!c.author)
+    && r.data[r.data.length - 1].mine === false && !leaks(r.data, reader, u1), r.data);
+  r = await call('POST', `/groups/${firstGroup}/chat`, reader.token, { content: 'Hello group.' });
+  check('a chat message shows the pseudonym, not the username', r.status === 201 && r.data.author === readerPseudonym
+    && r.data.mine === true && !leaks(r.data, reader), r.data);
+  r = await call('GET', `/groups/${firstGroup}/chat`, reader.token);
+  check('group chat shows pseudonyms only', r.status === 200 && r.data.length >= 1 && !leaks(r.data, reader), r.data);
+  r = await call('GET', `/groups/${firstGroup}`, reader.token);
+  check('a group does not list its members, and gives the reader their own pseudonym',
+    r.status === 200 && r.data.members === undefined && r.data.myPseudonym === readerPseudonym && !leaks(r.data, reader), r.data);
   let groupNow: Reply = { status: 0, json: true, data: null };
   for (let i = 0; i < 20; i++) {
     groupNow = await call('GET', `/groups/${firstGroup}`, reader.token);

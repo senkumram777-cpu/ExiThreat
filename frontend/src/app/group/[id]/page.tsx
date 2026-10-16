@@ -12,8 +12,6 @@ export default function GroupPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const userId = typeof window !== 'undefined' ? localStorage.getItem('exithreat_userId') ?? '' : '';
-  const username = typeof window !== 'undefined' ? localStorage.getItem('exithreat_username') ?? '' : '';
 
   // Only members get an answer; anyone else is refused.
   useEffect(() => {
@@ -105,7 +103,7 @@ export default function GroupPage() {
 
       {/* Group chat */}
       <section className="border-t border-gray-800 pt-6">
-        <GroupChat groupId={group.id} currentUserId={userId} currentUsername={username} />
+        <GroupChat groupId={group.id} myPseudonym={group.myPseudonym} />
       </section>
 
     </div>

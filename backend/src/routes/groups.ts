@@ -63,11 +63,8 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
   }
   await touchMember(id, req.userId!);
 
-  const [members, currentPosts] = await Promise.all([
-    prisma.groupMember.findMany({
-      where: { groupId: id },
-      select: { user: { select: { username: true } } },
-    }),
+  const [me, currentPosts] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: req.userId! }, select: { pseudonym: true } }),
     prisma.post.findMany({
       where: { placements: { some: { groupId: id } }, hiddenAt: null },
       select: {
@@ -84,7 +81,9 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
   res.json({
     ...withPostCount(summary),
     isMember: true,
-    members: members.map((m) => ({ username: m.user.username })),
+    // Members are never listed: who is in a group is not shown to the others, only how many.
+    // The reader's own pseudonym is what their chat messages and comments show.
+    myPseudonym: me.pseudonym,
     // Each post with its author's pseudonym, never the username.
     currentPosts: currentPosts.map(({ oc, ...post }) => ({ ...post, author: oc.pseudonym })),
   });
@@ -127,11 +126,11 @@ router.get('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Respon
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const messages = await prisma.chatMessage.findMany({
     where: { groupId: id },
-    include: { user: { select: { id: true, username: true } } },
+    include: { user: { select: { pseudonym: true } } },
     orderBy: { createdAt: 'desc' },
     take: limit,
   });
-  res.json(messages.reverse());
+  res.json(messages.reverse().map((m) => chatOut(m, req.userId!)));
 }));
 
 // POST /api/groups/:id/chat — post a chat message (stays local)
@@ -152,9 +151,17 @@ router.post('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Respo
   }
   const message = await prisma.chatMessage.create({
     data: { groupId: id, userId, content: content.text },
-    include: { user: { select: { id: true, username: true } } },
+    include: { user: { select: { pseudonym: true } } },
   });
-  res.status(201).json(message);
+  res.status(201).json(chatOut(message, userId));
 }));
+
+/** A chat message as members see it: by pseudonym, never the username or account id. */
+function chatOut(
+  m: { id: string; groupId: string; userId: string; content: string; createdAt: Date; user: { pseudonym: string } },
+  readerId: string,
+) {
+  return { id: m.id, groupId: m.groupId, content: m.content, createdAt: m.createdAt, author: m.user.pseudonym, mine: m.userId === readerId };
+}
 
 export default router;

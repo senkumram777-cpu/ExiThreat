@@ -10,11 +10,11 @@ import { groups as groupsApi, type ChatMessage } from '@/lib/api';
 
 interface GroupChatProps {
   groupId: string;
-  currentUserId: string;
-  currentUsername: string;
+  /** The reader's pseudonym: what their messages show. */
+  myPseudonym: string;
 }
 
-export default function GroupChat({ groupId, currentUserId, currentUsername }: GroupChatProps) {
+export default function GroupChat({ groupId, myPseudonym }: GroupChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -76,7 +76,7 @@ export default function GroupChat({ groupId, currentUserId, currentUsername }: G
           </div>
         )}
         {messages.map((m) => {
-          const isMe = m.user.id === currentUserId;
+          const isMe = m.mine;
           return (
             <div
               key={m.id}
@@ -91,7 +91,7 @@ export default function GroupChat({ groupId, currentUserId, currentUsername }: G
                 ].join(' ')}
               >
                 {!isMe && (
-                  <div className="text-xs text-accent-teal/70 mb-0.5">{m.user.username}</div>
+                  <div className="text-xs text-accent-teal/70 mb-0.5">{m.author}</div>
                 )}
                 <p className="break-words">{m.content}</p>
                 <div className={['text-xs mt-0.5', isMe ? 'text-navy-800' : 'text-gray-500'].join(' ')}>
@@ -110,7 +110,7 @@ export default function GroupChat({ groupId, currentUserId, currentUsername }: G
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Message as ${currentUsername}…`}
+          placeholder={`Message as ${myPseudonym}…`}
           maxLength={1000}
           className="flex-1 bg-navy-800 border border-gray-700 rounded-full px-4 py-2 text-sm font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal"
         />

@@ -9,7 +9,9 @@ import PushButton from '@/components/PushButton';
 import CommentSection from '@/components/CommentSection';
 import { useRules } from '@/lib/rules';
 
-type ViewState = 'loading' | 'first-look' | 'redacted';
+// 'first-look-ready': the look is still available but not started; it starts (and the server
+// records it) only when the reader taps "Read now", so opening a post by mistake costs nothing.
+type ViewState = 'loading' | 'first-look-ready' | 'first-look' | 'redacted';
 
 export default function PostPage() {
   const rules = useRules();
@@ -25,7 +27,6 @@ export default function PostPage() {
   // The post has gone to another group while a member had it open.
   const [movedOn, setMovedOn] = useState(false);
 
-  const userId = typeof window !== 'undefined' ? localStorage.getItem('exithreat_userId') ?? '' : '';
   const isOC = post?.isAuthor ?? false;
 
   useEffect(() => {
@@ -36,7 +37,7 @@ export default function PostPage() {
         // on every device the reader signs in on.
         const postData = await postsApi.get(id);
         setPost(postData);
-        setViewState(postData.firstLook === 'available' ? 'first-look' : 'redacted');
+        setViewState(postData.firstLook === 'available' ? 'first-look-ready' : 'redacted');
       } catch (err) {
         setError((err as Error).message);
         setViewState('redacted');
@@ -149,7 +150,23 @@ export default function PostPage() {
       )}
 
       {/* First-Look strip OR Redacted content */}
-      {viewState === 'first-look' ? (
+      {viewState === 'first-look-ready' ? (
+        <div className="p-4 bg-navy-800 rounded-xl border border-accent-teal/40 flex flex-col gap-3">
+          <div className="text-xs font-mono text-accent-teal uppercase tracking-widest">First look · unredacted</div>
+          <p className="font-mono text-sm text-gray-300 leading-relaxed">
+            You can read the original, with nothing removed, once. It starts when you tap Read now and closes
+            when you tap Done reading or leave this page. After that only the redacted version is shown.
+          </p>
+          <div>
+            <button
+              onClick={() => setViewState('first-look')}
+              className="px-5 py-2.5 rounded-lg font-mono text-sm bg-accent-teal text-navy-900 font-bold hover:opacity-90"
+            >
+              Read now
+            </button>
+          </div>
+        </div>
+      ) : viewState === 'first-look' ? (
         <div className="flex flex-col items-center gap-2">
           <SecureMarquee
             postId={id}
@@ -252,7 +269,7 @@ export default function PostPage() {
         <div className="text-xs font-mono text-gray-400 uppercase tracking-widest mb-3">
           Push to Next Group
         </div>
-        <PushButton postId={id} isOC={isOC} firstLookOpen={viewState === 'first-look'} onMoved={handleMoved} />
+        <PushButton postId={id} isOC={isOC} firstLookOpen={viewState === 'first-look' || viewState === 'first-look-ready'} onMoved={handleMoved} />
       </div>
 
       {/* OC manual push */}
@@ -284,7 +301,7 @@ export default function PostPage() {
 
       {/* Comments */}
       <div className="p-4 bg-navy-800 rounded-xl border border-gray-800">
-        <CommentSection postId={id} currentUserId={userId} />
+        <CommentSection postId={id} />
       </div>
     </div>
   );

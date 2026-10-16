@@ -31,7 +31,11 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   only groups not reached since the cycle began, then a new cycle once all eligible groups have
   had the post.
 - Pseudonyms (`User.pseudonym`, `services/pseudonym.ts`) are what groups and the common page
-  see of an author. Never send a username next to a pseudonym.
+  see of an author. Never send a username next to a pseudonym. Members never get a username or
+  account id of anyone else: comments and chat carry `author` (pseudonym) and `mine`, and a
+  group's page gives only its member count and the reader's own `myPseudonym` (API test checks).
+- The first look is opened only by a GET of `/posts/:id/strip`; HEAD is refused (405) so a
+  preview or prefetch cannot use it up. Both clients show a "Read now" step before fetching it.
 - Common page: `services/spread.ts` (pure, unit-tested) and `spreadService.ts` store
   `reachedGroups`, `eligibleGroups`, `spreadScore` and `listedAt` on each post, after every
   push and hourly; `routes/common.ts` lists them. Officers get the original as well, after
@@ -92,7 +96,8 @@ officers and admins use the website only. It calls this API directly
   field alongside the old one.
 - It relies on `error` and `code` in error answers (`SUSPENDED`, `CONTACT_REQUIRED`), on 401
   for an ended session, on `firstLook`, `POST /posts/:id/strip/done` with `reason`, the strip's
-  `{image, rows, rowHeight, scale}`, the heartbeats, and `GET /api/rules`.
+  `{image, rows, rowHeight, scale}`, comments and chat as `{author, mine, ...}`, a group's
+  `myPseudonym`, the heartbeats, and `GET /api/rules`.
 - Mobile numbers are confirmed with Firebase Phone Auth on ProMic's project, as on the website:
   the app sends the Firebase ID token to `POST /auth/verify/phone`. A test build
   (`-PphoneTest=true`) sends `test-phone:<number>`, which only a local server with

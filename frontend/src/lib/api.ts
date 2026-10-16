@@ -163,7 +163,10 @@ export interface Comment {
   postId: string;
   content: string;
   createdAt: string;
-  user: { id: string; username: string };
+  /** The writer's pseudonym; never their username. */
+  author: string;
+  /** Whether the signed-in user wrote it. */
+  mine: boolean;
 }
 
 export interface Group {
@@ -183,7 +186,8 @@ export interface Group {
 /** Only sent to members of the group. */
 export interface GroupDetail extends Group {
   isMember: boolean;
-  members: Array<{ username: string }>;
+  /** The reader's own pseudonym, which their messages and comments show. */
+  myPseudonym: string;
   currentPosts: Array<{
     id: string;
     redactedContent: string;
@@ -226,7 +230,10 @@ export interface ChatMessage {
   groupId: string;
   content: string;
   createdAt: string;
-  user: { id: string; username: string };
+  /** The writer's pseudonym; never their username. */
+  author: string;
+  /** Whether the signed-in user wrote it. */
+  mine: boolean;
 }
 
 export interface ProMicLinkStatus {

@@ -94,10 +94,12 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    the post is refused and nothing is saved.
    A post, its comments, votes and weightage can be read only by members of the groups it is
    in now (one at first, up to five once it is forwarded) and by its author. Nobody is told who the author is; the author's own page says
-   "Your Post".
+   "Your Post". Comments and group chat show the writer's pseudonym, never a username, and
+   members are not listed to each other: a group shows only how many it has.
 4. **First look.** A member of a group the post is in can see the unredacted text once,
    served as an image strip rather than text: one line, 16 characters wide, scrolling slowly
-   from right to left, that can't be selected or copied. The look ends when the reader taps "Done
+   from right to left, that can't be selected or copied. It starts only when the reader taps
+   "Read now", so opening a post by mistake does not use it up. The look ends when the reader taps "Done
    reading" or leaves the page; afterwards only the redacted version is available. The server
    keeps the record, so it is the same on every device. A look that was opened but never
    closed (lost connection) can be reopened for 10 minutes.

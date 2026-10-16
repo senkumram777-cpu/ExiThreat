@@ -5,10 +5,9 @@ import { posts as postsApi, type Comment } from '@/lib/api';
 
 interface CommentSectionProps {
   postId: string;
-  currentUserId: string;
 }
 
-export default function CommentSection({ postId, currentUserId }: CommentSectionProps) {
+export default function CommentSection({ postId }: CommentSectionProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState('');
@@ -60,13 +59,13 @@ export default function CommentSection({ postId, currentUserId }: CommentSection
             key={c.id}
             className={[
               'rounded-lg p-3 text-sm font-mono border',
-              c.user.id === currentUserId
+              c.mine
                 ? 'bg-navy-700 border-accent-teal/30 text-gray-200'
                 : 'bg-navy-800 border-gray-700 text-gray-300',
             ].join(' ')}
           >
             <div className="flex justify-between items-baseline mb-1">
-              <span className="text-accent-teal text-xs">{c.user.username}</span>
+              <span className="text-accent-teal text-xs">{c.author}{c.mine ? ' (you)' : ''}</span>
               <span className="text-gray-600 text-xs">
                 {new Date(c.createdAt).toLocaleDateString()}
               </span>
