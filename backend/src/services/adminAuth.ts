@@ -5,6 +5,10 @@
  * that the account is on ProMic's `admins/{uid}` allowlist, the same list ProMic's admin panel
  * and functions use. Being on the list is remembered for a minute per account, so removing
  * someone takes effect within a minute.
+ *
+ * Only one account may be the admin: ADMIN_EMAIL, signed in with Google. Anyone else is refused
+ * even if they are on the list. The same address is in ProMic's functions/adminAccount.js and
+ * admin-web/src/lib/adminAccount.ts; change all three together.
  */
 
 import { NextFunction, Request, Response } from 'express';
@@ -20,6 +24,8 @@ export interface AdminRequest extends Request {
   /** The Firebase ID token, passed on to ProMic's admin functions for officer accounts. */
   adminToken?: string;
 }
+
+export const ADMIN_EMAIL = 'senkumram777@gmail.com';
 
 const REMEMBER_MS = 60 * 1000;
 const hosted = process.env.NODE_ENV === 'production' || !!process.env.FLY_APP_NAME;
@@ -50,6 +56,10 @@ export async function adminFor(token: string): Promise<Admin | null> {
   }
   try {
     const decoded = await promicAuth().verifyIdToken(token);
+    const email = (decoded.email ?? '').toLowerCase();
+    if (email !== ADMIN_EMAIL || decoded.email_verified !== true || decoded.firebase?.sign_in_provider !== 'google.com') {
+      return null;
+    }
     if (!(await onAllowlist(decoded.uid))) return null;
     return { uid: decoded.uid, email: decoded.email ?? decoded.uid };
   } catch {

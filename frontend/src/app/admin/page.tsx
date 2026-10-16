@@ -56,7 +56,8 @@ export default function AdminPage() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  // Signed in to Google is not enough: the server checks ProMic's admin list.
+  // Signed in to Google is not enough: the server allows one account only (services/adminAuth.ts).
+  // Any other account is signed out straight away, back to the sign-in box with the reason.
   useEffect(() => {
     if (!user) {
       setAllowed(null);
@@ -65,8 +66,13 @@ export default function AdminPage() {
     admin.me()
       .then(() => setAllowed(true))
       .catch((err: Error & { status?: number }) => {
+        if (err.status === 401) {
+          setError(`${user.email || 'That account'} is not allowed to use this admin page. Sign in with the admin's Google account.`);
+          void signOutAdmin();
+          return;
+        }
         setAllowed(false);
-        setError(err.status === 401 ? `${user.email} is not a ProMic admin.` : err.message);
+        setError(err.message);
       });
   }, [user]);
 
@@ -109,7 +115,7 @@ export default function AdminPage() {
       {user === null && (
         <section className="p-6 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3 max-w-md">
           <p className="font-mono text-sm text-gray-300">
-            For ProMic admins. Sign in with the Google account you use for ProMic&apos;s admin panel.
+            For ProMic&apos;s administrator only. Sign in with the admin&apos;s Google account.
           </p>
           <div><Button tone="primary" onClick={signIn}>{ADMIN_TEST ? 'Sign in (local test admin)' : 'Sign in with Google'}</Button></div>
           <ErrorLine error={error} />
