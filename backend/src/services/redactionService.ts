@@ -125,7 +125,9 @@ const RULES: RedactionRule[] = [
   },
   {
     label: 'door_number',
-    pattern: /\b(?:Door|House|Flat|Plot|Apartment|Apt|Shop|Unit|Room|H\.?\s?No|D\.?\s?No|No)\.?(?:\s+No\.?)?\s*[:#]?\s*\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)?/gi,
+    // A home or shop number. Not "Unit 2" or "Room 5": in a workplace report those name a part of
+    // the workplace, and hiding them made posts hard to follow without protecting anyone.
+    pattern: /\b(?:Door|House|Flat|Plot|Apartment|Apt|Shop|H\.?\s?No|D\.?\s?No|No)\.?(?:\s+No\.?)?\s*[:#]?\s*\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)?/gi,
     replacement: '[ADDRESS REDACTED]',
   },
   {

@@ -14,6 +14,9 @@ import type { CircleMarker, LayerGroup, Map as LeafletMap } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LivePlayer, LiveState, LiveTicket } from './liveAudio';
 
+// ProMic's CHECK_IN_WAIT_MS (CheckIn.kt): how long a Host has to answer a check-in.
+const CHECK_IN_WAIT_SECONDS = 45;
+
 const REFRESH_MS = 15_000;
 const INDIA_CENTRE: [number, number] = [21.5, 79];
 
@@ -187,8 +190,8 @@ function checkInText(c: CheckInStatus | null, name: string): string {
   }
   if (answer.status === 'safe') return `${name} answered: I'm safe (passcode confirmed).`;
   if (answer.status === 'help') return `${name} asked for help (passcode confirmed). SOS has started.`;
-  if (answer.status === 'unanswered') return `${who} asked. ${name} did not answer within 15 seconds.`;
-  return `${who} asked. ${name} has 15 seconds to answer with their passcode.`;
+  if (answer.status === 'unanswered') return `${who} asked. ${name} did not answer within ${CHECK_IN_WAIT_SECONDS} seconds.`;
+  return `${who} asked. ${name} has ${CHECK_IN_WAIT_SECONDS} seconds to answer with their passcode.`;
 }
 const formatPoint = (p: { lat: number; lon: number }) =>
   hasPoint(p) ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}` : 'Location unknown';
@@ -795,7 +798,7 @@ export default function AreaDashboard({
                               <p className="font-mono text-xs text-gray-200">
                                 {checkIn.state.loud
                                   ? `Your voice is coming out of ${stream.name}'s loudspeaker at full volume.`
-                                  : `You can now speak through ${stream.name}'s phone. It plays quietly at first (earpiece or earphones), and from the loudspeaker if they still have not answered 15 seconds after you start.`}
+                                  : `You can now speak through ${stream.name}'s phone. It plays quietly at first (earpiece or earphones), and from the loudspeaker if they still have not answered ${CHECK_IN_WAIT_SECONDS} seconds after you start.`}
                               </p>
                               <button
                                 onPointerDown={() => startTalking(stream.hostId)}

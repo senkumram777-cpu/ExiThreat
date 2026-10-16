@@ -44,6 +44,12 @@ test('redaction: dates and addresses', () => {
   hides('Born 12/03/1990, joined 5 March 2019 and left on March 5, 2021', '12/03/1990', '5 March 2019', 'March 5, 2021');
   hides('Lives at Door No 14/2, 3rd Cross, Gandhi Nagar, Chennai 600042', '14/2', '3rd Cross', 'Gandhi Nagar', '600042');
   hides('The office is at 221 Baker Street and Flat 4B, Sector 21', '221 Baker', '4B', 'Sector 21');
+  hides('She lives in House No. 7 and works at Shop 12', 'No. 7', 'Shop 12');
+});
+
+test('redaction: parts of a workplace are not addresses', () => {
+  assert.equal(redactContent('The canteen at Unit 2 serves stale food.'), 'The canteen at Unit 2 serves stale food.');
+  assert.equal(redactContent('Workers in Room 5 and unit 3 had no fans.'), 'Workers in Room 5 and unit 3 had no fans.');
 });
 
 test('redaction: names', () => {
