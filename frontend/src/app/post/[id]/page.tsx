@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { backedBy, voteShare } from '@/lib/weight';
 import { posts as postsApi, push as pushApi, weightage as weightageApi, type Post, type WeightageResult } from '@/lib/api';
 import SecureMarquee from '@/components/SecureMarquee';
 import PushButton from '@/components/PushButton';
@@ -235,7 +236,7 @@ export default function PostPage() {
             Credibility Weightage
           </span>
           <span className="text-lg font-mono font-bold text-accent-teal">
-            {weightageData ? weightageData.aggregatedWeight.toFixed(1) : post.totalWeight.toFixed(1)}
+            {backedBy(weightageData ? weightageData.aggregatedWeight : post.totalWeight)}
           </span>
         </div>
         {weightageData && (
@@ -252,7 +253,7 @@ export default function PostPage() {
                   />
                 </div>
                 <span className="text-gray-500 w-20 text-right">
-                  {h.wasManualPush ? 'Manual (0)' : `${h.pushPercentage.toFixed(1)}%`}
+                  {h.wasManualPush ? 'Manual (0)' : `${voteShare(h.pushPercentage)} voted`}
                 </span>
                 <span className="text-gray-600 truncate max-w-24">{h.groupName}</span>
               </div>

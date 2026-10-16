@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { backedBy } from '@/lib/weight';
 import { groups as groupsApi, type GroupDetail } from '@/lib/api';
 import GroupChat from '@/components/GroupChat';
 
@@ -90,7 +91,7 @@ export default function GroupPage() {
                 </p>
                 <div className="text-xs font-mono text-gray-400 mb-1">by {post.author}</div>
                 <div className="flex gap-4 text-xs font-mono text-gray-500">
-                  <span>⚖ Weight {post.totalWeight.toFixed(1)}</span>
+                  <span>⚖ {backedBy(post.totalWeight)}</span>
                   <span>▲ {post._count.pushVotes} votes</span>
                   <span>💬 {post._count.comments}</span>
                   <span>{new Date(post.createdAt).toLocaleDateString()}</span>

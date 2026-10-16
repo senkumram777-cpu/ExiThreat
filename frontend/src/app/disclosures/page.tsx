@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { backedBy } from '@/lib/weight';
 import { posts as postsApi, type MyPost } from '@/lib/api';
 import { getSession } from '@/lib/session';
 
@@ -65,7 +66,7 @@ export default function DisclosuresPage() {
             <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">{post.redactedContent}</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-gray-500">
               {post.hiddenAt && <span className="text-accent-red">Hidden by an admin</span>}
-              <span>⚖ Weight {post.totalWeight.toFixed(1)}</span>
+              <span>⚖ {backedBy(post.totalWeight)}</span>
               <span>
                 {post._count.history} group{post._count.history !== 1 ? 's' : ''} passed
               </span>

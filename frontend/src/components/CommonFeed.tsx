@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CommonPage, CommonPost } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
+import { groupsPerDay } from '@/lib/weight';
 
 /**
  * The common page's list: posts that have reached the listing share of the groups (20% unless an
@@ -56,8 +57,8 @@ function PostCard({ post, officer, listShare }: { post: CommonPost; officer: boo
           <div className="text-[11px] text-gray-500">to reach {pct(listShare)}</div>
         </div>
         <div>
-          <div className="text-sm font-bold text-gray-200">{(post.spreadScore * 100).toFixed(1)}%</div>
-          <div className="text-[11px] text-gray-500">of groups a day</div>
+          <div className="text-sm font-bold text-gray-200">{groupsPerDay(post.spreadScore, post.eligibleGroups)}</div>
+          <div className="text-[11px] text-gray-500">spreading</div>
         </div>
       </div>
     </article>

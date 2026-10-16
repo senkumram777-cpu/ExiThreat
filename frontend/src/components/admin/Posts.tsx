@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { admin, type AdminPost } from '@/lib/adminApi';
 import { Badge, Button, Card, ErrorLine, Loading, Pager, SearchBox, Tabs, confirmAction, percent, useLoad, when } from './ui';
 import type { AdminNav } from './nav';
+import { groupsPerDay } from '@/lib/weight';
 
 type Filter = 'all' | 'common' | 'hidden' | 'unlisted';
 
@@ -61,7 +62,7 @@ export default function Posts({ nav, selected, commonPage = false }: { nav: Admi
                     </div>
                     <div className="text-sm text-gray-200 mt-1 line-clamp-2 break-words">{p.originalContent}</div>
                     <div className="text-xs text-gray-500 mt-1">
-                      {p.reachedGroups}/{p.eligibleGroups} groups · round {p.cycle} · {(p.spreadScore * 100).toFixed(1)}% a day · in {p.groups.length} now · {p._count.comments} comments
+                      {p.reachedGroups}/{p.eligibleGroups} groups · round {p.cycle} · {groupsPerDay(p.spreadScore, p.eligibleGroups)} · in {p.groups.length} now · {p._count.comments} comments
                     </div>
                   </button>
                 </li>

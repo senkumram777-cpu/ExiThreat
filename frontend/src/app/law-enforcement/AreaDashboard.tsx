@@ -43,6 +43,7 @@ interface Alert {
   // No town or village where the alert was raised, and the nearest named place or wider area.
   remote?: boolean;
   place?: string;
+  district?: string;
 }
 
 interface AlertGroup {
@@ -68,6 +69,7 @@ interface LiveStream {
   // Where the user is: no town or village there, and the nearest named place or wider area.
   remote?: boolean;
   place?: string;
+  district?: string;
   // How well their phone is reaching ProMic. `weak` is the phone's own report; `lost` means it
   // has stopped reporting, and lat/lon are then the last known position, sent at `locationAt`.
   weak?: boolean;
@@ -195,6 +197,12 @@ function checkInText(c: CheckInStatus | null, name: string): string {
 }
 const formatPoint = (p: { lat: number; lon: number }) =>
   hasPoint(p) ? `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}` : 'Location unknown';
+// The place name ProMic found ("Kodambakkam, Chennai") with its district, else the coordinates.
+function formatPlace(p: { lat: number; lon: number; place?: string; district?: string }): string {
+  if (!p.place) return formatPoint(p);
+  const district = p.district?.replace(/ District$/, '');
+  return district && !p.place.includes(district) ? `${p.place} (${district})` : p.place;
+}
 const formatWhen = (ms: number) =>
   new Date(ms).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -636,7 +644,7 @@ export default function AreaDashboard({
                         </div>
                         <div className={`${mutedClass} mt-1`}>
                           {TYPE_LABELS[latest.type] ?? latest.type} · {formatWhen(latest.ts)} ·{' '}
-                          {located ? formatPoint(located) : 'Location unknown'}
+                          {located ? formatPlace(located) : 'Location unknown'}
                         </div>
                       </button>
                       {openHost === group.hostId && (
@@ -649,11 +657,11 @@ export default function AreaDashboard({
                             >
                               <span className="text-gray-200">{formatWhen(alert.ts)}</span> ·{' '}
                               {TYPE_LABELS[alert.type] ?? alert.type}
-                              {alert.message ? ` · ${alert.message}` : ''} · {formatPoint(alert)}
+                              {alert.message ? ` · ${alert.message}` : ''} · {formatPlace(alert)}
                               {alert.remote && (
                                 <span className="text-amber-400">
                                   {' '}
-                                  · remote area{alert.place ? ` (${alert.place})` : ''}
+                                  · remote area
                                 </span>
                               )}
                               {alert.type === 'SOS' &&
@@ -724,7 +732,7 @@ export default function AreaDashboard({
                         )}
                       </div>
                       <button onClick={() => showOnMap(stream, stream.name)} className={`${mutedClass} mt-1 text-left`}>
-                        {formatPoint(stream)}
+                        {formatPlace(stream)}
                         {stream.since ? ` · live since ${formatWhen(stream.since)}` : ''}
                       </button>
                       {(stream.remote || stream.weak || stream.lost) && (
@@ -750,7 +758,7 @@ export default function AreaDashboard({
                               title="There is no town or village at this position."
                               className={`${badgeClass} bg-amber-500/20 text-amber-400`}
                             >
-                              Remote area{stream.place ? ` (${stream.place})` : ''}
+                              Remote area
                             </span>
                           )}
                         </div>
