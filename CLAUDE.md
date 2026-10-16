@@ -73,6 +73,29 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   (`frontend/src/lib/rules.ts`).
 - `frontend`: `npm run dev`, `npm run build`, `npm run lint`
 
+## Android app: ExiThreatApp
+
+A native Android app for members lives in its own repository,
+`C:\Users\SenthilKumarRamakris\AndroidStudioProjects\ExiThreatApp`
+(https://github.com/senkumram777-cpu/ExiThreatApp; Kotlin, Jetpack Compose, Retrofit). It has
+the website's member pages (sign-up and sign-in, groups and chat, posts with the first look,
+votes and manual push, comments, Mine and the map, the common page, account, ProMic backups);
+officers and admins use the website only. It calls this API directly
+(`https://exithreat-api.fly.dev/api`), so the API is a contract with it:
+
+- Its endpoint paths and request fields are in `data/Api.kt`, the response fields in
+  `data/Models.kt` (named as in `frontend/src/lib/api.ts`). Renaming or removing a route or a
+  field, or changing a field's type, breaks the app: change the app with it, or add the new
+  field alongside the old one.
+- It relies on `error` and `code` in error answers (`SUSPENDED`, `CONTACT_REQUIRED`), on 401
+  for an ended session, on `firstLook`, `POST /posts/:id/strip/done` with `reason`, the strip's
+  `{image, rows, rowHeight, scale}`, the heartbeats, and `GET /api/rules`.
+- Mobile numbers are confirmed with Firebase Phone Auth on ProMic's project, as on the website:
+  the app sends the Firebase ID token to `POST /auth/verify/phone`. A test build
+  (`-PphoneTest=true`) sends `test-phone:<number>`, which only a local server with
+  `PHONE_TOKEN_TEST=1` accepts.
+- A new member feature on the website is not in the app until it is built there too.
+
 ## Sibling project: ProMic
 
 ProMic is a separate Android project at
