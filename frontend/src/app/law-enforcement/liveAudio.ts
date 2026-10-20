@@ -4,13 +4,17 @@
  * The Host's phone sends audio through ProMic's relay as binary WebSocket frames (ProMic repo,
  * AudioFrameCodec.kt): a 60-byte header (36 bytes user id, then 8-byte timestamp, latitude and
  * longitude) followed by the audio, which is AES-256-GCM encrypted as IV(12) || ciphertext ||
- * tag(16) (AudioEncryption.kt). Decrypted, it is 16 kHz mono 16-bit little-endian PCM. The relay
- * only ever forwards ciphertext; the key comes from ProMic's leJoinLive endpoint.
+ * tag(16) (AudioEncryption.kt). Decrypted, it is Opus (ProMic repo, LiveOpus.kt): a format byte
+ * (1), then 20 ms packets of 16 kHz mono, each as a 2-byte big-endian length and the packet. The
+ * relay only ever forwards ciphertext; the key comes from ProMic's leJoinLive endpoint.
  *
- * Talk-back is the same frame going the other way, on the same socket and with the same key. The
+ * Talk-back is the same frame going the other way, on the same socket and with the same key, but
+ * with 16 kHz mono 16-bit little-endian PCM inside rather than Opus. The
  * relay hands a listener's frames to the Host's phone only, and the phone plays them only once a
  * check-in has gone unanswered (ProMic repo, HostCheckIn.kt), so sending before that does nothing.
  */
+
+import type { OpusDecoder } from 'opus-decoder';
 
 export interface LiveTicket {
   url: string;
@@ -24,6 +28,7 @@ export type LiveState = 'connecting' | 'waiting' | 'playing' | 'ended';
 const HEADER_BYTES = 60;
 const USER_ID_BYTES = 36;
 const IV_BYTES = 12;
+const FORMAT_OPUS = 1;
 const SAMPLE_RATE = 16000;
 // Audio is scheduled slightly ahead so small network gaps do not click.
 const LEAD_SECONDS = 0.2;
@@ -44,6 +49,7 @@ export class LivePlayer {
   private socket: WebSocket | null = null;
   private context: AudioContext | null = null;
   private key: CryptoKey | null = null;
+  private opus: OpusDecoder<16000> | null = null;
   private userId = '';
   private nextStart = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -54,7 +60,11 @@ export class LivePlayer {
   private unmuteTimer: ReturnType<typeof setTimeout> | null = null;
   private microphone: Microphone | null = null;
 
-  constructor(private readonly onState: (state: LiveState) => void) {}
+  constructor(
+    private readonly onState: (state: LiveState) => void,
+    /** Where the Host's phone was when it sent each frame, when it knew (the header's lat/lon). */
+    private readonly onPosition: (lat: number, lon: number, ts: number) => void = () => undefined,
+  ) {}
 
   /** Must be called from a click, or the browser will not allow sound. */
   async start(ticket: LiveTicket): Promise<void> {
@@ -63,6 +73,11 @@ export class LivePlayer {
     const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt', 'encrypt']);
     this.key = key;
     this.userId = ticket.userId;
+    // libopus, compiled to WebAssembly: plays the same in every browser.
+    const { OpusDecoder } = await import('opus-decoder');
+    const opus = new OpusDecoder({ sampleRate: SAMPLE_RATE, channels: 1 });
+    await opus.ready;
+    this.opus = opus;
     this.context = new AudioContext();
     await this.context.resume();
 
@@ -94,13 +109,19 @@ export class LivePlayer {
     } catch {
       return; // not for this session's key (for example, the Host restarted the stream)
     }
-    // The officer's own voice would come straight back from the Host's microphone.
-    if (this.muted) return;
-    const samples = new Int16Array(pcm, 0, Math.floor(pcm.byteLength / 2));
-    if (samples.length === 0) return;
+    // Header numbers are big-endian (Java's ByteBuffer); 0, 0 means the phone had no fix.
+    const header = new DataView(frame, USER_ID_BYTES, 24);
+    const lat = header.getFloat64(8);
+    const lon = header.getFloat64(16);
+    if (lat !== 0 && lon !== 0 && Number.isFinite(lat) && Number.isFinite(lon)) {
+      this.onPosition(lat, lon, Number(header.getBigInt64(0)));
+    }
+    const samples = this.decodeOpus(new Uint8Array(pcm));
+    // The officer's own voice would come straight back from the Host's microphone. (Decoded all
+    // the same, so the decoder keeps up with the stream.)
+    if (this.muted || !samples || samples.length === 0) return;
     const buffer = context.createBuffer(1, samples.length, SAMPLE_RATE);
-    const channel = buffer.getChannelData(0);
-    for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+    buffer.copyToChannel(samples, 0);
 
     const now = context.currentTime;
     if (this.nextStart < now + 0.02 || this.nextStart > now + MAX_LAG_SECONDS) this.nextStart = now + LEAD_SECONDS;
@@ -110,6 +131,35 @@ export class LivePlayer {
     source.start(this.nextStart);
     this.nextStart += buffer.duration;
     this.onState('playing');
+  }
+
+  /** The frame's 20 ms packets, decoded and joined; null if it isn't Opus or is cut short. */
+  private decodeOpus(payload: Uint8Array): Float32Array<ArrayBuffer> | null {
+    const opus = this.opus;
+    if (!opus || payload.length === 0 || payload[0] !== FORMAT_OPUS) return null;
+    const parts: Float32Array[] = [];
+    let total = 0;
+    let at = 1;
+    while (at < payload.length) {
+      if (at + 2 > payload.length) return null;
+      const length = (payload[at] << 8) | payload[at + 1];
+      at += 2;
+      if (length === 0 || at + length > payload.length) return null;
+      const decoded = opus.decodeFrame(payload.subarray(at, at + length));
+      at += length;
+      const channel = decoded.channelData[0];
+      if (channel && decoded.samplesDecoded > 0) {
+        parts.push(channel.subarray(0, decoded.samplesDecoded));
+        total += decoded.samplesDecoded;
+      }
+    }
+    const out = new Float32Array(total);
+    let offset = 0;
+    for (const part of parts) {
+      out.set(part, offset);
+      offset += part.length;
+    }
+    return out;
   }
 
   /**
@@ -205,5 +255,7 @@ export class LivePlayer {
     this.socket = null;
     this.context?.close().catch(() => undefined);
     this.context = null;
+    this.opus?.free();
+    this.opus = null;
   }
 }

@@ -132,7 +132,8 @@ A user can open their ProMic Host account's backup audio/video at `/promic`.
 - Access: `backend/src/services/promicService.ts` uses the Firebase Admin SDK with a ProMic
   service account (`PROMIC_*` env vars, see `backend/.env.example`) to list segment metadata
   and decrypt Storage blobs server-side. The browser never gets Firebase credentials or the
-  backup key; media comes back as WAV/MP4 from `/api/promic/backups/{audio|video}/:id`.
+  backup key; media comes back from `/api/promic/backups/{audio|video}/:id` as FLAC (backups
+  stored as `.flac`, sent as they are), WAV (older `.pcm` backups) or MP4.
 - Without the `PROMIC_*` env vars the routes answer 503 and the rest of the app is unaffected.
 
 ### Integration: ProMic law-enforcement sign in
@@ -164,8 +165,9 @@ page waits for by polling.
 OpenStreetMap tiles), the area's AI threat / SOS alerts and the shared live streams, from
 ProMic's `leSetStation`, `leOverview` and `leJoinLive`. `liveAudio.ts` plays a stream in the
 browser: it connects to ProMic's relay and decrypts each frame, so it must match ProMic's
-`AudioFrameCodec` (60-byte header) and `AudioEncryption` (IV(12) || ciphertext || tag, 16 kHz
-mono 16-bit PCM).
+`AudioFrameCodec` (60-byte header), `AudioEncryption` (IV(12) || ciphertext || tag) and
+`LiveOpus` (inside: the byte 1, then 20 ms Opus packets of 16 kHz mono, each with a 2-byte
+big-endian length), decoded with `opus-decoder`. Talk-back sends 16 kHz mono 16-bit PCM.
 
 While an officer is listening, `AreaDashboard.tsx` calls ProMic's `leLivePing` every 20 seconds (and
 once with `leaving` on stopping), which is what lets the ProMic user's app show that police are

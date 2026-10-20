@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CircleMarker, LayerGroup, Map as LeafletMap } from 'leaflet';
+import type { CircleMarker, LayerGroup, Map as LeafletMap, Polyline } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LivePlayer, LiveState, LiveTicket } from './liveAudio';
 
@@ -19,6 +19,25 @@ const CHECK_IN_WAIT_SECONDS = 45;
 
 const REFRESH_MS = 15_000;
 const INDIA_CENTRE: [number, number] = [21.5, 79];
+
+// A live user's path, as ProMic's own listener map draws it (ListenerViewModel): the last 200
+// positions, and moves shorter than 8 m are GPS jitter, not movement.
+const TRAIL_MAX_POINTS = 200;
+const TRAIL_MIN_METRES = 8;
+
+interface Trail {
+  points: [number, number][];
+  /** When the latest position was taken, so an older report never moves the dot backwards. */
+  ts: number;
+}
+
+function metresBetween(a: [number, number], b: [number, number]): number {
+  const rad = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * rad;
+  const dLon = (b[1] - a[1]) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}
 
 type Scope = 'radius' | 'district' | 'state';
 
@@ -245,6 +264,11 @@ export default function AreaDashboard({
   const stationLayer = useRef<LayerGroup | null>(null);
   const pointLayer = useRef<LayerGroup | null>(null);
   const focusMarker = useRef<CircleMarker | null>(null);
+  // Live users' dots and paths, kept between refreshes so they move instead of being redrawn.
+  const liveLayer = useRef<LayerGroup | null>(null);
+  const trails = useRef<Record<string, Trail>>({});
+  const liveDots = useRef<Record<string, { dot: CircleMarker; path: Polyline }>>({});
+  const followHost = useRef<string | null>(null);
   const centredOnStation = useRef(false);
   const liveRows = useRef<Record<string, HTMLDivElement | null>>({});
   const player = useRef<LivePlayer | null>(null);
@@ -309,6 +333,7 @@ export default function AreaDashboard({
       }).addTo(created);
       stationLayer.current = L.layerGroup().addTo(created);
       pointLayer.current = L.layerGroup().addTo(created);
+      liveLayer.current = L.layerGroup().addTo(created);
       // Clicking the map marks (or moves) the station, keeping the area option already chosen.
       created.on('click', (event) => saveStation(event.latlng.lat, event.latlng.lng, scopeRef.current));
       map.current = created;
@@ -318,6 +343,7 @@ export default function AreaDashboard({
       cancelled = true;
       map.current?.remove();
       map.current = null;
+      liveDots.current = {};
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -433,13 +459,52 @@ export default function AreaDashboard({
         .bindTooltip(`${group.name}: ${TYPE_LABELS[latest.type] ?? latest.type}`)
         .addTo(pointLayer.current);
     }
-    for (const stream of overview.live) {
-      if (!hasPoint(stream)) continue;
-      L.circleMarker([stream.lat, stream.lon], { radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8 })
-        .bindTooltip(`${stream.name}: live`)
-        .addTo(pointLayer.current);
+    // A stream no longer live takes its dot and path with it.
+    const live = new Set(overview.live.map((stream) => stream.hostId));
+    for (const hostId of Object.keys(trails.current)) {
+      if (live.has(hostId)) continue;
+      delete trails.current[hostId];
+      liveDots.current[hostId]?.dot.remove();
+      liveDots.current[hostId]?.path.remove();
+      delete liveDots.current[hostId];
     }
+    for (const stream of overview.live) {
+      if (hasPoint(stream)) moveLiveDot(stream.hostId, stream.name, stream.lat, stream.lon, stream.locationAt ?? 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overview]);
+
+  /**
+   * A live user's newest position: added to their path and the dot moved there. Reports come both
+   * from the 15-second refresh and, while the officer is listening, from every audio frame.
+   */
+  function moveLiveDot(hostId: string, name: string, lat: number, lon: number, ts: number) {
+    const L = leaflet.current;
+    if (!L || !map.current || !liveLayer.current) return;
+    const point: [number, number] = [lat, lon];
+    const trail = trails.current[hostId] ?? (trails.current[hostId] = { points: [], ts: 0 });
+    if (trail.points.length > 0 && ts > 0 && ts <= trail.ts) return;
+    const last = trail.points[trail.points.length - 1];
+    const moved = !last || metresBetween(last, point) >= TRAIL_MIN_METRES;
+    if (ts > 0) trail.ts = ts;
+    if (!moved) return;
+    trail.points = [...trail.points, point].slice(-TRAIL_MAX_POINTS);
+
+    let shown = liveDots.current[hostId];
+    if (!shown) {
+      shown = {
+        path: L.polyline([], { color: '#22c55e', weight: 3, opacity: 0.7 }).addTo(liveLayer.current),
+        dot: L.circleMarker(point, { radius: 7, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8 })
+          .bindTooltip(`${name}: live`)
+          .addTo(liveLayer.current),
+      };
+      liveDots.current[hostId] = shown;
+    }
+    shown.path.setLatLngs(trail.points);
+    shown.dot.setLatLng(point);
+    // While listening, the map keeps the user in view, at whatever zoom the officer chose.
+    if (followHost.current === hostId) map.current.panTo(point);
+  }
 
   function showOnMap(point: { lat: number; lon: number }, label: string) {
     const L = leaflet.current;
@@ -469,6 +534,7 @@ export default function AreaDashboard({
   function stopListening() {
     player.current?.stop();
     player.current = null;
+    followHost.current = null;
     setListening(null);
   }
 
@@ -480,10 +546,16 @@ export default function AreaDashboard({
     stopListening();
     setError(null);
     // The player is created inside this click so the browser lets it make sound.
-    const created = new LivePlayer((state) =>
-      setListening((current) => (current?.hostId === stream.hostId ? { hostId: stream.hostId, state } : current)),
+    const created = new LivePlayer(
+      (state) =>
+        setListening((current) => (current?.hostId === stream.hostId ? { hostId: stream.hostId, state } : current)),
+      (lat, lon, ts) => {
+        if (player.current === created) moveLiveDot(stream.hostId, stream.name, lat, lon, ts);
+      },
     );
     player.current = created;
+    followHost.current = stream.hostId;
+    if (map.current && hasPoint(stream)) map.current.setView([stream.lat, stream.lon], Math.max(map.current.getZoom(), 15));
     setListening({ hostId: stream.hostId, state: 'connecting' });
     try {
       const ticket: LiveTicket = await call('leJoinLive', { hostId: stream.hostId });
@@ -563,6 +635,9 @@ export default function AreaDashboard({
             : 'Click the map where your police station is. Alerts and live streams for that area will appear below.'}
         </p>
         <div ref={mapElement} className="isolate h-80 w-full rounded-lg overflow-hidden border border-gray-800" />
+        <p className={`${mutedClass} mt-2`}>
+          Green: users streaming live, with the path they have taken since you opened this page. While you listen, the map follows them.
+        </p>
         <div className="flex flex-col gap-2 mt-3">
           {scopes.map((option) => (
             <label key={option.value} className={`${mutedClass} flex items-start gap-2 ${station ? 'cursor-pointer' : 'opacity-50'}`}>

@@ -337,7 +337,8 @@ above, is decided by ProMic's backend, not by this page.
 `liveAudio.ts` connects to ProMic's relay over WebSocket and decrypts each frame in the browser
 with the Web Crypto API, using a session key ProMic hands over only for a shared stream. It
 must stay in step with ProMic's formats: a 60-byte frame header, then
-`IV(12) || ciphertext || tag(16)` holding 16 kHz mono 16-bit PCM. Talk-back sends the
+`IV(12) || ciphertext || tag(16)` holding Opus audio (16 kHz mono, 20 ms packets, decoded with
+`opus-decoder`). Talk-back sends the
 officer's microphone the other way in the same frame format, and the relay passes it to the
 user's phone only.
 

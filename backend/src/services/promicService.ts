@@ -16,7 +16,9 @@ import * as admin from 'firebase-admin';
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
-// ProMic records 16 kHz mono 16-bit PCM (AudioCircularBuffer.SAMPLE_RATE).
+// ProMic records 16 kHz mono 16-bit PCM (AudioCircularBuffer.SAMPLE_RATE). Backups are stored
+// as .flac files (ProMic's FlacCodec), which browsers play as they are; older ones, named .pcm,
+// are the raw PCM.
 const PCM_SAMPLE_RATE = 16000;
 
 // Whole-blob decryption (GCM authenticates the entire object), so cap what gets buffered.
@@ -192,7 +194,7 @@ async function fetchDecrypted(
   pathField: string,
   storagePrefix: string,
   maxBytes: number,
-): Promise<Buffer> {
+): Promise<{ data: Buffer; storagePath: string }> {
   const firebase = getApp();
   const db = firebase.database();
   const [metaSnap, keySnap] = await Promise.all([
@@ -221,7 +223,7 @@ async function fetchDecrypted(
     throw new ProMicError(413, 'Backup is too large to open here');
   }
   const [blob] = await file.download();
-  return decrypt(blob, key);
+  return { data: decrypt(blob, key), storagePath };
 }
 
 function pcmToWav(pcm: Buffer): Buffer {
@@ -242,17 +244,18 @@ function pcmToWav(pcm: Buffer): Buffer {
   return Buffer.concat([header, pcm]);
 }
 
-/** Returns the audio backup as a playable WAV (ProMic stores headerless PCM). */
-export async function getAudioBackup(hostId: string, segmentId: string): Promise<Buffer> {
-  const pcm = await fetchDecrypted(
+/** Returns the audio backup ready to play: the FLAC file as stored, or an older raw-PCM one as WAV. */
+export async function getAudioBackup(hostId: string, segmentId: string): Promise<{ data: Buffer; type: string }> {
+  const { data, storagePath } = await fetchDecrypted(
     hostId, `segments/${hostId}/${segmentId}`, 'filePath', 'backup', MAX_AUDIO_BYTES,
   );
-  return pcmToWav(pcm);
+  return storagePath.endsWith('.flac') ? { data, type: 'audio/flac' } : { data: pcmToWav(data), type: 'audio/wav' };
 }
 
 /** Returns the emergency video clip as MP4. */
-export async function getVideoBackup(hostId: string, segmentId: string): Promise<Buffer> {
-  return fetchDecrypted(
+export async function getVideoBackup(hostId: string, segmentId: string): Promise<{ data: Buffer; type: string }> {
+  const { data } = await fetchDecrypted(
     hostId, `video_segments/${hostId}/${segmentId}`, 'storagePath', 'emergency_video', MAX_VIDEO_BYTES,
   );
+  return { data, type: 'video/mp4' };
 }

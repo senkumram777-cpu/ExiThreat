@@ -96,7 +96,7 @@ router.get('/backups', requireAuth, handle(async (req: AuthRequest, res: Respons
   }
 }));
 
-// GET /api/promic/backups/audio/:id — decrypted backup audio as WAV
+// GET /api/promic/backups/audio/:id — decrypted backup audio (FLAC, or WAV for older backups)
 // GET /api/promic/backups/video/:id — decrypted emergency clip as MP4
 router.get('/backups/:kind(audio|video)/:id', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { kind, id } = req.params;
@@ -110,8 +110,8 @@ router.get('/backups/:kind(audio|video)/:id', requireAuth, handle(async (req: Au
     return;
   }
   try {
-    const data = kind === 'audio' ? await getAudioBackup(hostId, id) : await getVideoBackup(hostId, id);
-    res.setHeader('Content-Type', kind === 'audio' ? 'audio/wav' : 'video/mp4');
+    const { data, type } = kind === 'audio' ? await getAudioBackup(hostId, id) : await getVideoBackup(hostId, id);
+    res.setHeader('Content-Type', type);
     res.setHeader('Content-Length', data.length);
     res.setHeader('Cache-Control', 'no-store');
     res.end(data);
