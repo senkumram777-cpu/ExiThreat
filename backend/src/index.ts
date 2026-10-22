@@ -26,8 +26,9 @@ if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PRO
 
 // ── Security headers ───────────────────────────────────────────────────────
 app.use(helmet());
+// FRONTEND_ORIGIN may list several addresses, comma-separated (the site and its admin subdomain).
 app.use(cors({
-  origin: process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000',
+  origin: (process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000').split(',').map((o) => o.trim()),
   credentials: true,
 }));
 

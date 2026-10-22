@@ -147,7 +147,10 @@ credentials email ProMic sends links to this page, so the route must keep its pa
 
 ## Hosting (Fly.io)
 
-- Website: app `exithreat` → https://exithreat.fly.dev (`frontend/fly.toml`)
+- Website: app `exithreat` → https://exithreat.iyugam.com, admin page https://exithreat-admin.iyugam.com
+  (`frontend/fly.toml`; DNS at GoDaddy, Fly certificates; `src/middleware.ts` sends each host to its
+  pages; https://exithreat.fly.dev still serves everything). The API allows every address in
+  `FRONTEND_ORIGIN` (comma-separated, `backend/fly.toml`)
 - API: app `exithreat-api` → https://exithreat-api.fly.dev/api (`backend/fly.toml`)
 - Database: Fly Postgres app `exithreat-db`, attached to `exithreat-api` as `DATABASE_URL`
 - Deploy with `fly deploy --ha=false` from `frontend/` or `backend/`. The API URL is compiled

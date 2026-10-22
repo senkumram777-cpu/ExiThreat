@@ -11,9 +11,10 @@ alerts and live streams.
 
 | | |
 |---|---|
-| Website | https://exithreat.fly.dev |
+| Website | https://exithreat.iyugam.com (also https://exithreat.fly.dev) |
+| Admin page | https://exithreat-admin.iyugam.com |
 | API | https://exithreat-api.fly.dev/api |
-| Officer sign in | https://exithreat.fly.dev/law-enforcement |
+| Officer sign in | https://exithreat.iyugam.com/law-enforcement |
 | Local | website http://localhost:3000, API http://localhost:4000/api |
 
 Current work is on the branch `feature/promic-backups`; the hosted site is deployed from it.
@@ -192,7 +193,8 @@ running `npm run dev`.
   (`backend/src/services/phoneVerification.ts`). A number that already belongs to a ProMic
   account signs in to that account, which is never deleted. Google bills each SMS to the
   ProMic project. The site's domain must be in Firebase console → Authentication → Settings →
-  Authorized domains (`exithreat.fly.dev` and `localhost` are). The project's web settings
+  Authorized domains (`exithreat.iyugam.com`, `exithreat-admin.iyugam.com`, `exithreat.fly.dev`
+  and `localhost` are). The project's web settings
   in `firebasePhone.ts` are public identifiers, not secrets.
 
 ### API
@@ -237,7 +239,7 @@ shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatM
 
 ## Admin page
 
-https://exithreat.fly.dev/admin is for ProMic's admin: the one account in ProMic's `admin/`
+https://exithreat-admin.iyugam.com (also `/admin` on the site) is for ProMic's admin: the one account in ProMic's `admin/`
 entry (`{uid, email}`, set in the Firebase console), who also uses ProMic's admin panel. They
 sign in with that Google account (Firebase Authentication of ProMic's project,
 `frontend/src/lib/adminAuth.ts`); ExiThreat's server checks the Firebase ID token against
@@ -384,7 +386,7 @@ Backend (`backend/.env`, not in git):
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Signs sign-in tokens. Required: the server does not start without it, and when hosted it refuses the example value or one under 32 characters |
-| `FRONTEND_ORIGIN` | The website's address, for CORS |
+| `FRONTEND_ORIGIN` | The website's addresses, comma-separated, for CORS |
 | `PORT` | Defaults to 4000 |
 | `TRUST_PROXY` | Set to `1` behind a hosting proxy so rate limits apply per visitor |
 | `PROMIC_DATABASE_URL`, `PROMIC_STORAGE_BUCKET` | ProMic's Firebase project (optional) |

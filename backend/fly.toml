@@ -10,7 +10,7 @@ primary_region = 'sin'
 [env]
   PORT = '4000'
   TRUST_PROXY = '1'
-  FRONTEND_ORIGIN = 'https://exithreat.fly.dev'
+  FRONTEND_ORIGIN = 'https://exithreat.iyugam.com,https://exithreat-admin.iyugam.com,https://exithreat.fly.dev'
   PROMIC_DATABASE_URL = 'https://promic-c5567-default-rtdb.firebaseio.com'
   PROMIC_STORAGE_BUCKET = 'promic-c5567.firebasestorage.app'
 
