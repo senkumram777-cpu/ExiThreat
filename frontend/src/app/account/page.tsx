@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { auth, type MyWeight } from '@/lib/api';
 import { clearSession, getSession, saveSession } from '@/lib/session';
 import PasswordInput from '@/components/PasswordInput';
+import DeleteAccount from '@/components/DeleteAccount';
 
 const inputClass =
   'bg-navy-800 border border-gray-700 rounded-lg px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-accent-teal';
@@ -157,6 +158,8 @@ export default function AccountPage() {
           {saving ? 'Saving…' : 'Change password'}
         </button>
       </form>
+
+      <DeleteAccount />
     </div>
   );
 }

@@ -170,7 +170,8 @@ running `npm run dev`.
 |---|---|
 | `/` | Home |
 | `/auth/register`, `/auth/login`, `/auth/reset` | Sign up, sign in, reset a forgotten password |
-| `/account`, `/account/contact` | Sign out and change password; add email and mobile to an older account |
+| `/account`, `/account/contact` | Sign out, change password, delete the account; add email and mobile to an older account |
+| `/privacy`, `/delete-account` | Privacy policy; how to delete an account (both given to Google Play) |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
 | `/common` | The common page: posts that have reached 20% of the groups (an admin setting), fastest spreading first |
 | `/disclosures` | The user's own posts ("Mine") |
@@ -209,6 +210,7 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 | `POST /auth/verify/start`, `POST /auth/verify/check` | Send a code to an email address; enter it |
 | `POST /auth/verify/phone` | A Firebase ID token from a phone sign-in, exchanged for a confirmation of that number |
 | `POST /auth/register`, `POST /auth/login`, `POST /auth/reset` | Sign up (with both confirmations), sign in (username, email or mobile), new password with a confirmation |
+| `POST /auth/delete` | The member deletes their own account (with the password) and everything it wrote |
 | `GET /auth/me`, `POST /auth/contact`, `POST /auth/password`, `POST /auth/signout-all` | The account and whether its contact details are complete; add them; change password; sign out everywhere |
 | `POST /auth/heartbeat`, `GET /auth/weight` | Time on the site; the member's own weightage |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
@@ -505,7 +507,8 @@ These public servers are meant for light use.
   what a member may do). A member's weightage is shown only to them. Group weights are as of
   the last hourly recalculation, except the pushing group's, which is recalculated at the push.
 - There is no admin role in ExiThreat, and no way to leave or change group.
-- An account cannot be deleted by its owner, and its email or mobile cannot be changed.
+- An account's email or mobile cannot be changed. Its owner can delete it (Account page, or
+  `/delete-account`), which removes everything it wrote.
 - Only Indian mobile numbers are accepted.
 - Sending from Gmail and confirming with Firebase were tested only up to the providers:
   locally, codes were printed and numbers confirmed with test tokens. The hosted site has them
@@ -516,8 +519,8 @@ These public servers are meant for light use.
   lower case, a single name with nothing around it to mark it as one, and other languages. It
   redacts place names along with personal names. Posts made before a rule was added keep the
   redaction they got at the time.
-- A post cannot be edited or deleted, and there is no moderation, reporting, terms of use or
-  privacy policy on the site yet.
+- A post cannot be edited or deleted, and there is no moderation, reporting or terms
+  of use on the site yet. The privacy policy is at `/privacy` (it covers the Android app too).
 - The author is not notified when a post moves or gets a comment; "Mine" shows the current
   counts.
 - The officer page's lists, badges and filters have been checked in a browser against

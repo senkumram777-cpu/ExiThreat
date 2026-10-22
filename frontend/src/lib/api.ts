@@ -382,6 +382,8 @@ export const auth = {
     req<AuthResponse>('POST', '/auth/password', { currentPassword, newPassword }),
   /** Every token issued so far stops working, including this device's. */
   signOutAll: () => req<{ ok: boolean }>('POST', '/auth/signout-all'),
+  /** Deletes the account and everything it wrote, for good. */
+  deleteAccount: (password: string) => req<{ ok: boolean }>('POST', '/auth/delete', { password }),
 };
 
 // ── Posts ─────────────────────────────────────────────────────────────────

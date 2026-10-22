@@ -10,6 +10,7 @@ import { ensureGroup } from '../services/groupService';
 import { randomPseudonym } from '../services/pseudonym';
 import { addTimeToday, noteActiveDay } from '../services/groupWeightService';
 import { recalculateMemberWeight } from '../services/memberWeightService';
+import { recalculateAllSpreads } from '../services/spreadService';
 import { LIMITS, USERNAME_PATTERN, passwordProblem } from '../services/validation';
 import {
   Channel,
@@ -363,6 +364,26 @@ router.post('/signout-all', requireSignedIn, handle(async (req: AuthRequest, res
   // Token times are whole seconds; the next second, so that a token issued in this one is out too.
   const from = new Date((Math.floor(Date.now() / 1000) + 1) * 1000);
   await prisma.user.update({ where: { id: req.userId! }, data: { tokensValidFrom: from } });
+  res.json({ ok: true });
+}));
+
+// POST /api/auth/delete — the member deletes their own account, proved with the password, and
+// everything it wrote (posts, comments, chat, votes), as the admin's delete does. Its email and
+// mobile number can then be used for a new account.
+router.post('/delete', requireSignedIn, loginLimit, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const userId = req.userId!;
+  const { password } = req.body as { password?: unknown };
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user || typeof password !== 'string' || !(await bcrypt.compare(password, user.passwordHash))) {
+    res.status(400).json({ error: 'Password is wrong' });
+    return;
+  }
+  await prisma.$transaction([
+    prisma.post.deleteMany({ where: { ocUserId: userId } }),
+    prisma.userActiveDay.deleteMany({ where: { userId } }),
+    prisma.user.delete({ where: { id: userId } }),
+  ]);
+  void recalculateAllSpreads();
   res.json({ ok: true });
 }));
 

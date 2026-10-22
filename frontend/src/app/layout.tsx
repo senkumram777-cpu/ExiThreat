@@ -48,7 +48,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </main>
 
         <footer className="border-t border-gray-800 py-4 text-center text-xs font-mono text-gray-700">
-          ExiThreat · Security through Friction
+          ExiThreat · Security through Friction ·{' '}
+          <a href="/privacy" className="text-gray-500">Privacy</a>
         </footer>
       </body>
     </html>

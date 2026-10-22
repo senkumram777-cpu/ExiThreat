@@ -237,6 +237,21 @@ async function accountChecks(): Promise<void> {
   check('the details cannot be changed afterwards',
     (await call('POST', '/auth/contact', oldToken, { emailVerificationId: await confirm('email', newContact().email) })).status === 409);
 
+  // ── a member deletes their own account ──
+  const leaving = newContact();
+  const quitter: TestUser = (await registerWith('leaving_user', leaving.email, leaving.phone)).data;
+  await prisma.post.create({ data: { originalContent: 'Mine.', redactedContent: 'Mine.', ocUserId: quitter.userId } });
+  check('deleting with a wrong password is refused',
+    (await call('POST', '/auth/delete', quitter.token, { password: 'not-the-password' })).status === 400
+      && (await prisma.user.count({ where: { id: quitter.userId } })) === 1);
+  check('a member deletes their own account and its posts',
+    (await call('POST', '/auth/delete', quitter.token, { password: PASSWORD })).status === 200
+      && (await prisma.user.count({ where: { id: quitter.userId } })) === 0
+      && (await prisma.post.count({ where: { ocUserId: quitter.userId } })) === 0);
+  check('its token stops working', (await call('GET', '/auth/me', quitter.token)).status === 401);
+  check('its email and mobile can sign up again',
+    (await registerWith('came_back', leaving.email, leaving.phone)).status === 201);
+
   // The users above are not part of the group checks that follow.
   await prisma.groupMember.deleteMany();
   await prisma.group.deleteMany();
