@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../index';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireTerms, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { generatePaperStrip } from '../services/imageService';
 import { redactContent } from '../services/redactionService';
@@ -10,6 +10,7 @@ import { recalculateGroupWeight } from '../services/groupWeightService';
 import { groupMapFor } from '../services/groupMapService';
 import { recalculateSpread } from '../services/spreadService';
 import { LIMITS, readText } from '../services/validation';
+import { notBlockedBy } from './moderation';
 
 const router = Router();
 
@@ -38,7 +39,7 @@ function journeyOf(post: { createdAt: Date }, groupsPassed: number, placements: 
 }
 
 // POST /api/posts — create a new post (OC submits complaint)
-router.post('/', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const userId = req.userId!;
   const content = readText(req.body?.content, 'content', LIMITS.postMax, LIMITS.postMin);
   if (!content.ok) {
@@ -291,7 +292,8 @@ router.get('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Re
     return;
   }
   const comments = await prisma.comment.findMany({
-    where: { postId: id },
+    // Less comments by members the reader has blocked.
+    where: { postId: id, user: notBlockedBy(req.userId!) },
     include: { user: { select: { pseudonym: true } } },
     orderBy: { createdAt: 'asc' },
   });
@@ -299,7 +301,7 @@ router.get('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Re
 }));
 
 // POST /api/posts/:id/comments — add a tagged comment (travels with post)
-router.post('/:id/comments', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/comments', requireAuth, requireTerms, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
   const content = readText(req.body?.content, 'content', LIMITS.commentMax);

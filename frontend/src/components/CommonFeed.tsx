@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { CommonPage, CommonPost } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
 import { groupsPerDay } from '@/lib/weight';
+import ReportBlock from './ReportBlock';
 
 /**
  * The common page's list: posts that have reached the listing share of the groups (20% unless an
@@ -20,7 +21,9 @@ function duration(ms: number): string {
   return `${Math.floor(hours / 24)} days ${hours % 24} h`;
 }
 
-function PostCard({ post, officer, listShare }: { post: CommonPost; officer: boolean; listShare: number }) {
+function PostCard({ post, officer, listShare, onBlocked }: {
+  post: CommonPost; officer: boolean; listShare: number; onBlocked: (author: string) => void;
+}) {
   const share = post.eligibleGroups > 0 ? Math.round((post.reachedGroups / post.eligibleGroups) * 100) : 0;
   return (
     <article className="p-4 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3">
@@ -28,6 +31,8 @@ function PostCard({ post, officer, listShare }: { post: CommonPost; officer: boo
         <span className="text-accent-teal font-bold">#{post.rank}</span>
         <span className="text-gray-300">{post.author}</span>
         <span className="text-gray-600 ml-auto">{new Date(post.createdAt).toLocaleDateString()}</span>
+        {/* Members only: officers read the page through ProMic, not as members. */}
+        {!officer && <ReportBlock targetType="post" targetId={post.id} author={post.author} onBlocked={onBlocked} />}
       </div>
 
       {officer && post.originalContent !== undefined && (
@@ -115,7 +120,16 @@ export default function CommonFeed({
 
   return (
     <div className="flex flex-col gap-4">
-      {posts.map((post) => <PostCard key={post.id} post={post} officer={officer} listShare={rules.listShare} />)}
+      {posts.map((post) => (
+        <PostCard
+          key={post.id}
+          post={post}
+          officer={officer}
+          listShare={rules.listShare}
+          // A blocked member's posts leave the page; the server leaves them out from now on.
+          onBlocked={() => { void fetchFrom(0); }}
+        />
+      ))}
       {error && <div className="text-xs font-mono text-accent-red">{error}</div>}
       {posts.length < total && (
         <button

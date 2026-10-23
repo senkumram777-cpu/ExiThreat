@@ -7,14 +7,17 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { groups as groupsApi, type ChatMessage } from '@/lib/api';
+import ReportBlock from './ReportBlock';
 
 interface GroupChatProps {
   groupId: string;
   /** The reader's pseudonym: what their messages show. */
   myPseudonym: string;
+  /** A writer was blocked from their message: the page drops their posts too. */
+  onBlocked?: (author: string) => void;
 }
 
-export default function GroupChat({ groupId, myPseudonym }: GroupChatProps) {
+export default function GroupChat({ groupId, myPseudonym, onBlocked }: GroupChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -91,7 +94,10 @@ export default function GroupChat({ groupId, myPseudonym }: GroupChatProps) {
                 ].join(' ')}
               >
                 {!isMe && (
-                  <div className="text-xs text-accent-teal/70 mb-0.5">{m.author}</div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-accent-teal/70 mb-0.5">
+                    <span>{m.author}</span>
+                    <ReportBlock targetType="chat" targetId={m.id} author={m.author} onBlocked={(author) => { void loadMessages(); onBlocked?.(author); }} />
+                  </div>
                 )}
                 <p className="break-words">{m.content}</p>
                 <div className={['text-xs mt-0.5', isMe ? 'text-navy-800' : 'text-gray-500'].join(' ')}>

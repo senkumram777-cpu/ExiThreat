@@ -1,10 +1,11 @@
 import { Router, Response } from 'express';
 import { prisma } from '../index';
-import { requireAuth, AuthRequest } from '../middleware/auth';
+import { requireAuth, requireTerms, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { isGroupMember } from '../services/accessService';
 import { ensureGroup, touchMember } from '../services/groupService';
 import { LIMITS, readText } from '../services/validation';
+import { notBlockedBy } from './moderation';
 
 const router = Router();
 
@@ -66,7 +67,8 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
   const [me, currentPosts] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: req.userId! }, select: { pseudonym: true } }),
     prisma.post.findMany({
-      where: { placements: { some: { groupId: id } }, hiddenAt: null },
+      // Less posts by members the reader has blocked.
+      where: { placements: { some: { groupId: id } }, hiddenAt: null, oc: notBlockedBy(req.userId!) },
       select: {
         id: true,
         redactedContent: true,
@@ -125,7 +127,7 @@ router.get('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Respon
   }
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const messages = await prisma.chatMessage.findMany({
-    where: { groupId: id },
+    where: { groupId: id, user: notBlockedBy(req.userId!) },
     include: { user: { select: { pseudonym: true } } },
     orderBy: { createdAt: 'desc' },
     take: limit,
@@ -134,7 +136,7 @@ router.get('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Respon
 }));
 
 // POST /api/groups/:id/chat — post a chat message (stays local)
-router.post('/:id/chat', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+router.post('/:id/chat', requireAuth, requireTerms, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
   const userId = req.userId!;
   const content = readText(req.body?.content, 'content', LIMITS.chatMax);

@@ -16,6 +16,8 @@ const LABELS: Record<string, string> = {
   'post.delete': 'deleted a post',
   'comment.delete': 'deleted a comment',
   'chat.delete': 'deleted a chat message',
+  'report.remove': 'removed reported content',
+  'report.dismiss': 'dismissed reports',
   'group.rename': 'renamed a group',
   'group.move': 'moved a member',
   'recalculate': 'recalculated weights and spreads',

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { backedBy } from '@/lib/weight';
 import { groups as groupsApi, type GroupDetail } from '@/lib/api';
 import GroupChat from '@/components/GroupChat';
+import ReportBlock from '@/components/ReportBlock';
 
 export default function GroupPage() {
   const { id } = useParams<{ id: string }>();
@@ -89,7 +90,15 @@ export default function GroupPage() {
                 <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">
                   {post.redactedContent}
                 </p>
-                <div className="text-xs font-mono text-gray-400 mb-1">by {post.author}</div>
+                <div className="flex items-center justify-between text-xs font-mono text-gray-400 mb-1">
+                  <span>by {post.author}</span>
+                  <ReportBlock
+                    targetType="post"
+                    targetId={post.id}
+                    author={post.author}
+                    onBlocked={(author) => setGroup((g) => g && { ...g, currentPosts: g.currentPosts.filter((p) => p.author !== author) })}
+                  />
+                </div>
                 <div className="flex gap-4 text-xs font-mono text-gray-500">
                   <span>⚖ {backedBy(post.totalWeight)}</span>
                   <span>▲ {post._count.pushVotes} votes</span>
@@ -104,7 +113,11 @@ export default function GroupPage() {
 
       {/* Group chat */}
       <section className="border-t border-gray-800 pt-6">
-        <GroupChat groupId={group.id} myPseudonym={group.myPseudonym} />
+        <GroupChat
+          groupId={group.id}
+          myPseudonym={group.myPseudonym}
+          onBlocked={(author) => setGroup((g) => g && { ...g, currentPosts: g.currentPosts.filter((p) => p.author !== author) })}
+        />
       </section>
 
     </div>

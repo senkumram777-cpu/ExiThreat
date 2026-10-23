@@ -57,6 +57,7 @@ export interface Overview {
   groups: { total: number; takingPosts: number };
   posts: { total: number; newThisWeek: number; hidden: number; onCommonPage: number; unlisted: number };
   activity: { comments: number; chatMessages: number; votes: number; firstLooksThisWeek: number };
+  reports: { open: number };
   days: { day: string; joined: number; posted: number; active: number }[];
   recentActions: AdminAction[];
 }
@@ -166,6 +167,24 @@ export interface Officer {
   hasStation: boolean;
 }
 
+/** One reported post, comment or chat message, with every member report about it. */
+export interface ReportedItem {
+  targetType: 'post' | 'comment' | 'chat';
+  targetId: string;
+  /** What the reporters saw (a post's redacted version), kept if the item has been removed. */
+  content: string;
+  author: Person & { suspendedAt: string | null };
+  /** Still there; for a post, whether it is hidden; a comment's post, a message's group. */
+  exists: boolean;
+  hidden: boolean;
+  postId: string | null;
+  groupId: string | null;
+  resolution: 'removed' | 'dismissed' | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  reports: { id: string; reason: string; detail: string | null; createdAt: string; reporter: Person }[];
+}
+
 const q = (params: Record<string, string | number | undefined>) => {
   const search = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') search.set(k, String(v));
@@ -198,6 +217,10 @@ export const admin = {
   chat: (groupId: string, offset: number) =>
     call<{ total: number; offset: number; messages: ChatRow[] }>('GET', `/chat${q({ groupId, offset })}`),
   deleteChat: (id: string) => call('DELETE', `/chat/${id}`),
+
+  reports: (status: 'open' | 'resolved') => call<{ items: ReportedItem[] }>('GET', `/reports${q({ status })}`),
+  resolveReports: (targetType: string, targetId: string, action: 'remove' | 'dismiss', reason: string) =>
+    call<{ ok: boolean; closed: number }>('POST', '/reports/resolve', { targetType, targetId, action, reason }),
 
   groups: () => call<{ minMembers: number; maxMembers: number; groups: AdminGroup[] }>('GET', '/groups'),
   group: (id: string) => call<AdminGroupDetail>('GET', `/groups/${id}`),

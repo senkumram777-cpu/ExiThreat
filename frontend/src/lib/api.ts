@@ -15,6 +15,8 @@ export interface AuthResponse {
   username: string;
   /** An older account without its email and mobile number: it must add them first. */
   needsContact?: boolean;
+  /** An account made before there were terms of use: it must agree to them before writing anything. */
+  needsTerms?: boolean;
 }
 
 export type ContactChannel = 'email' | 'phone';
@@ -42,6 +44,29 @@ export interface Me {
   pseudonym: string;
   hasEmail: boolean;
   hasPhone: boolean;
+  /** Whether they have agreed to the terms of use (/terms). */
+  termsAccepted: boolean;
+}
+
+/** What a member can report or block someone from: a post, a comment or a group chat message. */
+export type ReportTarget = 'post' | 'comment' | 'chat';
+
+/** The reasons a report can give (backend routes/moderation.ts, REPORT_REASONS). */
+export const REPORT_REASONS: Array<[string, string]> = [
+  ['harassment', 'Harassment or bullying'],
+  ['hate', 'Hate speech'],
+  ['violence', 'Threats or violence'],
+  ['sexual', 'Sexual content'],
+  ['personal_info', "Shares someone's private information"],
+  ['spam', 'Spam or false'],
+  ['other', 'Something else'],
+];
+
+/** A member the signed-in user has blocked, by pseudonym. `id` is the block's own. */
+export interface BlockedMember {
+  id: string;
+  author: string;
+  createdAt: string;
 }
 
 export interface Post {
@@ -335,6 +360,14 @@ async function req<T>(
     throw new Error(data.error ?? 'This account has been suspended.');
   }
 
+  // An account that has not agreed to the terms of use tried to write something.
+  if (res.status === 403 && data?.code === 'TERMS_REQUIRED') {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/terms') {
+      window.location.assign('/terms?agree=1');
+    }
+    throw new Error(data.error ?? 'Agree to the terms of use to post, comment or chat.');
+  }
+
   // An older account that has not added its email and mobile number yet.
   if (res.status === 403 && data?.code === 'CONTACT_REQUIRED') {
     if (typeof window !== 'undefined' && window.location.pathname !== '/account/contact') {
@@ -358,8 +391,11 @@ export const auth = {
   verifyPhone: (idToken: string) => req<{ verificationId: string }>('POST', '/auth/verify/phone', { idToken }),
   verifyCheck: (verificationId: string, code: string) =>
     req<{ verified: boolean }>('POST', '/auth/verify/check', { verificationId, code }),
+  /** Only with the terms of use agreed to. */
   register: (username: string, password: string, emailVerificationId: string, phoneVerificationId: string) =>
-    req<AuthResponse>('POST', '/auth/register', { username, password, emailVerificationId, phoneVerificationId }),
+    req<AuthResponse>('POST', '/auth/register', { username, password, emailVerificationId, phoneVerificationId, acceptTerms: true }),
+  /** Agrees to the terms of use, for an account made before there were any. */
+  acceptTerms: () => req<{ ok: boolean }>('POST', '/auth/terms'),
   /** `identifier` is the username, email address or mobile number. */
   login: (identifier: string, password: string) =>
     req<AuthResponse>('POST', '/auth/login', { identifier, password }),
@@ -456,6 +492,20 @@ export const common = {
 
 export const weightage = {
   get: (postId: string) => req<WeightageResult>('GET', `/weightage/${postId}`),
+};
+
+// ── Reports and blocks ────────────────────────────────────────────────────
+
+export const moderation = {
+  /** Reports a post, comment or chat message to the admin; `block` also blocks its writer. */
+  report: (targetType: ReportTarget, targetId: string, reason: string, detail: string, block: boolean) =>
+    req<{ ok: boolean; alreadyReported: boolean; blocked: boolean }>(
+      'POST', '/reports', { targetType, targetId, reason, detail, block }),
+  /** Blocks whoever wrote it: their posts, comments and chat are no longer shown. */
+  block: (targetType: ReportTarget, targetId: string) =>
+    req<{ ok: boolean; author: string }>('POST', '/blocks', { targetType, targetId }),
+  blocked: () => req<BlockedMember[]>('GET', '/blocks'),
+  unblock: (id: string) => req<{ ok: boolean }>('DELETE', `/blocks/${id}`),
 };
 
 // ── ProMic ────────────────────────────────────────────────────────────────

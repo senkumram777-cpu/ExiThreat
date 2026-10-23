@@ -9,7 +9,7 @@ export default function Dashboard() {
   const { data, error } = useLoad(() => admin.overview(), []);
   if (error) return <ErrorLine error={error} />;
   if (!data) return <Loading />;
-  const { users, groups, posts, activity, days } = data;
+  const { users, groups, posts, activity, days, reports } = data;
   const peak = Math.max(1, ...days.map((d) => Math.max(d.active, d.joined, d.posted)));
 
   return (
@@ -19,6 +19,7 @@ export default function Dashboard() {
           <Stat label="accounts" value={users.total} note={`${users.newThisWeek} new this week`} />
           <Stat label="active today" value={users.activeToday} note={`${users.activeThisWeek} this week`} />
           <Stat label="suspended" value={users.suspended} note={`${users.withoutContact} without contact details`} />
+          <Stat label="open reports" value={reports.open} note={<a href="#reports" className="text-accent-teal">see Reports</a>} />
         </div>
       </Card>
       <Card title="Groups and posts">

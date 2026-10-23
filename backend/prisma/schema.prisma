@@ -34,6 +34,9 @@ model User {
   // Set by an admin (routes/admin.ts): the account cannot sign in or use the site until restored.
   suspendedAt     DateTime?
   suspendedReason String?
+  // When the member agreed to the terms of use (/terms): at sign-up, or later for accounts made
+  // before there were terms. Until then they cannot post, comment or chat (TERMS_REQUIRED).
+  termsAcceptedAt DateTime?
 
   groupMemberships GroupMember[]
   posts            Post[]        @relation("OCPosts")
@@ -42,6 +45,10 @@ model User {
   viewRecords      ViewRecord[]
   chatMessages     ChatMessage[]
   proMicLink       ProMicLink?
+  reportsMade      Report[]      @relation("ReportsMade")
+  reportsAgainst   Report[]      @relation("ReportsAgainst")
+  blocks           Block[]       @relation("Blocker")
+  blockedBy        Block[]       @relation("Blocked")
 }
 
 model Group {
@@ -276,4 +283,44 @@ model AdminAction {
   detail     String?  // a short description: the reason, the old and new value, …
 
   @@index([at])
+}
+
+// A member's report of a post, comment or chat message (routes/moderation.ts), for the admin to
+// act on in the admin page's Reports tab. One per member per item.
+model Report {
+  id         String    @id @default(uuid())
+  reporterId String
+  // Who wrote the reported item.
+  authorId   String
+  targetType String    // "post", "comment" or "chat"
+  targetId   String
+  reason     String    // one of REPORT_REASONS in routes/moderation.ts
+  detail     String?
+  // The text as the reporter saw it (a post's redacted version), kept if the item is removed.
+  content    String
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  resolution String?   // "removed" or "dismissed"
+  resolvedBy String?   // the admin's email address
+
+  reporter User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  author   User @relation("ReportsAgainst", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@unique([reporterId, targetType, targetId])
+  @@index([resolvedAt, createdAt])
+  @@index([targetType, targetId])
+}
+
+// A member who no longer sees another member's posts, comments and chat messages. The blocked
+// member is not told. Chosen from a piece of their writing, never by account id.
+model Block {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  blocker User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
 }

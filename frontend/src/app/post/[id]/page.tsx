@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { backedBy, voteShare } from '@/lib/weight';
 import { posts as postsApi, push as pushApi, weightage as weightageApi, type Post, type WeightageResult } from '@/lib/api';
 import SecureMarquee from '@/components/SecureMarquee';
 import PushButton from '@/components/PushButton';
 import CommentSection from '@/components/CommentSection';
+import ReportBlock from '@/components/ReportBlock';
 import { useRules } from '@/lib/rules';
 
 // 'first-look-ready': the look is still available but not started; it starts (and the server
@@ -16,6 +17,7 @@ type ViewState = 'loading' | 'first-look-ready' | 'first-look' | 'redacted';
 
 export default function PostPage() {
   const rules = useRules();
+  const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const [post, setPost] = useState<Post | null>(null);
   const [weightageData, setWeightageData] = useState<WeightageResult | null>(null);
@@ -136,6 +138,15 @@ export default function PostPage() {
           {new Date(post.createdAt).toLocaleDateString()}
         </span>
         {!isOC && <span className="text-xs font-mono text-gray-400">by {post.author}</span>}
+        {!isOC && (
+          <ReportBlock
+            targetType="post"
+            targetId={post.id}
+            author={post.author}
+            className="ml-auto"
+            onBlocked={() => router.push(post.groupId ? `/group/${post.groupId}` : '/groups')}
+          />
+        )}
         {isOC && (
           <span className="ml-auto text-xs font-mono text-accent-teal border border-accent-teal/30 px-2 py-0.5 rounded-full">
             Your Post

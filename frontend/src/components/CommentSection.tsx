@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { posts as postsApi, type Comment } from '@/lib/api';
+import ReportBlock from './ReportBlock';
 
 interface CommentSectionProps {
   postId: string;
@@ -68,6 +69,14 @@ export default function CommentSection({ postId }: CommentSectionProps) {
               <span className="text-accent-teal text-xs">{c.author}{c.mine ? ' (you)' : ''}</span>
               <span className="text-gray-600 text-xs">
                 {new Date(c.createdAt).toLocaleDateString()}
+                {!c.mine && (
+                  <ReportBlock
+                    targetType="comment"
+                    targetId={c.id}
+                    author={c.author}
+                    onBlocked={(author) => setComments((prev) => prev.filter((x) => x.author !== author))}
+                  />
+                )}
               </span>
             </div>
             <p className="break-words">{c.content}</p>

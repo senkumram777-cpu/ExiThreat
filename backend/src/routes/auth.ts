@@ -109,7 +109,9 @@ async function contactStep(res: Response, step: () => Promise<void>): Promise<vo
 }
 
 /** The answer to a sign-up or sign-in. Signing in is a day of use for the group's weight. */
-function session(user: { id: string; username: string; emailHash: string | null; phoneHash: string | null }) {
+function session(user: {
+  id: string; username: string; emailHash: string | null; phoneHash: string | null; termsAcceptedAt: Date | null;
+}) {
   void noteActiveDay(user.id);
   return {
     token: signToken(user.id, user.username),
@@ -117,6 +119,8 @@ function session(user: { id: string; username: string; emailHash: string | null;
     username: user.username,
     // An older account must add its email and mobile number before it can use the site.
     needsContact: !user.emailHash || !user.phoneHash,
+    // An account made before there were terms of use must agree to them before it writes anything.
+    needsTerms: !user.termsAcceptedAt,
   };
 }
 
@@ -157,9 +161,13 @@ router.post('/register', registerLimit, handle(async (req: Request, res: Respons
     res.status(403).json({ error: 'New accounts cannot be created at the moment. Try again later.' });
     return;
   }
-  const { username, password, emailVerificationId, phoneVerificationId } = req.body as {
-    username?: unknown; password?: unknown; emailVerificationId?: string; phoneVerificationId?: string;
+  const { username, password, emailVerificationId, phoneVerificationId, acceptTerms } = req.body as {
+    username?: unknown; password?: unknown; emailVerificationId?: string; phoneVerificationId?: string; acceptTerms?: unknown;
   };
+  if (acceptTerms !== true) {
+    res.status(400).json({ error: 'Agree to the terms of use to create an account.' });
+    return;
+  }
   if (
     typeof username !== 'string'
     || username.length < LIMITS.usernameMin
@@ -211,7 +219,8 @@ async function createWithPseudonym(data: { username: string; passwordHash: strin
   for (let attempt = 0; ; attempt++) {
     const pseudonym = randomPseudonym();
     if (attempt < 5 && (await prisma.user.findUnique({ where: { pseudonym }, select: { id: true } }))) continue;
-    return prisma.user.create({ data: { ...data, pseudonym } });
+    // Signing up needs agreeing to the terms of use (checked above).
+    return prisma.user.create({ data: { ...data, pseudonym, termsAcceptedAt: new Date() } });
   }
 }
 
@@ -253,7 +262,7 @@ router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request,
 router.get('/me', requireSignedIn, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: req.userId! },
-    select: { id: true, username: true, pseudonym: true, emailHash: true, phoneHash: true },
+    select: { id: true, username: true, pseudonym: true, emailHash: true, phoneHash: true, termsAcceptedAt: true },
   });
   res.json({
     userId: user.id,
@@ -262,7 +271,15 @@ router.get('/me', requireSignedIn, handle(async (req: AuthRequest, res: Response
     pseudonym: user.pseudonym,
     hasEmail: !!user.emailHash,
     hasPhone: !!user.phoneHash,
+    termsAccepted: !!user.termsAcceptedAt,
   });
+}));
+
+// POST /api/auth/terms — the member agrees to the terms of use (/terms). Needed once, by
+// accounts made before there were terms; new accounts agree when they sign up.
+router.post('/terms', requireSignedIn, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  await prisma.user.updateMany({ where: { id: req.userId!, termsAcceptedAt: null }, data: { termsAcceptedAt: new Date() } });
+  res.json({ ok: true });
 }));
 
 // POST /api/auth/heartbeat — the website, while it is open and in view, reports the time since

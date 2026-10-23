@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = { title: 'Privacy Policy · ExiThreat' };
 
 const CONTACT = 'senkumram777@gmail.com';
-const UPDATED = '22 October 2026';
+const UPDATED = '23 October 2026';
 
 // The ExiThreat website and Android app share this policy (Play Store listing → Privacy policy).
 // Keep it in step with what the backend stores: backend/prisma/schema.prisma.
@@ -42,6 +42,11 @@ export default function PrivacyPage() {
             comments, group chat messages and your votes.
           </li>
           <li>
+            <b>Reports and blocks:</b> when you report a post, comment or chat message, we keep the reason you
+            chose, any detail you add and a copy of what you reported; when you block a member, we keep who you
+            blocked.
+          </li>
+          <li>
             <b>How you use ExiThreat:</b> the days you use it, the time spent on it, and which disclosures you
             have read, used to work out your own and your group&apos;s weightage. Days of use are kept for 60
             days.
@@ -74,8 +79,12 @@ export default function PrivacyPage() {
             original and the redacted copy of disclosures on the common page.
           </li>
           <li>
-            The administrator can read posts, comments and group chat, and can suspend or delete accounts and
-            content that break the rules.
+            The administrator can read posts, comments and group chat, reads the reports members send, and can
+            suspend or delete accounts and content that break the{' '}
+            <Link href="/terms" className="text-accent-teal">Terms of Use</Link>.
+          </li>
+          <li>
+            Nobody is told that you reported or blocked them. Your list of blocked members is seen only by you.
           </li>
         </ul>
       </Section>
@@ -103,7 +112,7 @@ export default function PrivacyPage() {
         <p>
           Your account and what you wrote are kept until you delete your account. You can delete it at any time
           from the Account page in the app or on the website; this permanently removes your account, your
-          disclosures, comments, chat messages, votes and usage records straight away. See{' '}
+          disclosures, comments, chat messages, votes, reports, blocks and usage records straight away. See{' '}
           <Link href="/delete-account" className="text-accent-teal">how to delete your account</Link>.
         </p>
       </Section>

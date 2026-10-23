@@ -73,6 +73,16 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   `requireAuth`/`requireSignedIn` and at sign-in (`code: "SUSPENDED"`); hidden posts
   (`Post.hiddenAt`) have no reader group (`readerGroup`), are left out of group pages, the
   common page (`ON_COMMON_PAGE` in `routes/common.ts`), the sweep and the author's push.
+- Terms, reports and blocks (`backend/src/routes/moderation.ts`, website
+  `components/ReportBlock.tsx`, `app/terms/page.tsx`): sign-up needs `acceptTerms: true`
+  (`User.termsAcceptedAt`); `requireTerms` (after `requireAuth`) refuses posting, commenting and
+  chatting with `TERMS_REQUIRED` until `POST /auth/terms`. Reports (`Report`) and blocks
+  (`Block`) name an item (`targetType` post/comment/chat, `targetId`), never an account; the
+  reader must be able to see it. Every list a member reads (group posts, chat, comments, the
+  common page) leaves out blocked authors with `notBlockedBy`; add it to any new one. The
+  admin's Reports tab (`GET /admin/reports`, `POST /admin/reports/resolve`); hiding or
+  deleting an item on the admin page closes its reports (`resolveReports`). The report dialog
+  is mounted once (`ReportBlockDialog` in the layout), so a refreshing list cannot close it.
 - Rules an admin can change: defined in `services/rules.ts` (pure, unit-tested), values in
   `services/settings.ts` (`rule('…')`, loaded at start, stored in `Setting`). Read rules
   through `rule()` (or `groupMinMembers()`, `manualPushCooldownMs()` in `groupService.ts`),
@@ -94,7 +104,8 @@ officers and admins use the website only. It calls this API directly
   `data/Models.kt` (named as in `frontend/src/lib/api.ts`). Renaming or removing a route or a
   field, or changing a field's type, breaks the app: change the app with it, or add the new
   field alongside the old one.
-- It relies on `error` and `code` in error answers (`SUSPENDED`, `CONTACT_REQUIRED`), on 401
+- It relies on `error` and `code` in error answers (`SUSPENDED`, `CONTACT_REQUIRED`,
+  `TERMS_REQUIRED`), on `needsTerms`, `termsAccepted`, `/reports` and `/blocks`, on 401
   for an ended session, on `firstLook`, `POST /posts/:id/strip/done` with `reason`, the strip's
   `{image, rows, rowHeight, scale}`, comments and chat as `{author, mine, ...}`, a group's
   `myPseudonym`, the heartbeats, and `GET /api/rules`.

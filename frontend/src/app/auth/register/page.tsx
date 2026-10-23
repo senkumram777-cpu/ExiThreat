@@ -20,6 +20,7 @@ export default function RegisterPage() {
   const [repeatPassword, setRepeatPassword] = useState('');
   const [emailProof, setEmailProof] = useState<string | null>(null);
   const [phoneProof, setPhoneProof] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +33,10 @@ export default function RegisterPage() {
     }
     if (password !== repeatPassword) {
       setError('The two passwords are not the same');
+      return;
+    }
+    if (!agreed) {
+      setError('Agree to the Terms of Use to create an account');
       return;
     }
     setLoading(true);
@@ -105,10 +110,19 @@ export default function RegisterPage() {
             className={inputClass}
           />
         </label>
+        <label className="flex items-start gap-2 text-xs font-mono text-gray-300 leading-relaxed">
+          <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} className="mt-0.5" />
+          <span>
+            I am 18 or older and agree to the{' '}
+            <Link href="/terms" target="_blank" className="text-accent-teal">Terms of Use</Link>: no abusive or
+            objectionable content, and no tolerance for abusive members. I have read the{' '}
+            <Link href="/privacy" target="_blank" className="text-accent-teal">Privacy Policy</Link>.
+          </span>
+        </label>
         {error && <div className="text-accent-red text-xs font-mono">{error}</div>}
         <button
           type="submit"
-          disabled={loading || !emailProof || !phoneProof}
+          disabled={loading || !emailProof || !phoneProof || !agreed}
           className="py-3 bg-accent-red text-white rounded-lg font-mono font-bold text-sm disabled:opacity-50 hover:bg-accent-red/80 transition-colors"
         >
           {loading ? 'Creating account…' : 'Create Account'}

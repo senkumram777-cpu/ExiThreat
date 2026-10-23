@@ -154,6 +154,15 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
     pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
     Every registered member sees the redacted version only. Officers see both the original
     and the redacted version (next section).
+13. **Terms, reporting and blocking.** Signing up needs agreeing to the terms of use (`/terms`);
+    an account made before there were terms can read but not post, comment or chat until it
+    agrees (the server answers 403 `code: "TERMS_REQUIRED"`, and the website and app open the
+    terms with an "I agree" button). Every post, comment and chat message someone else wrote
+    has a ⋯ button: **Report** sends it to the admin with a reason (and optional detail), and
+    **Block** hides everything that member writes (posts in groups and on the common page,
+    comments, chat) from the blocker, without telling them. Members pick whom to block by an
+    item, never by account id; their block list (Account page, with Unblock) shows pseudonyms.
+    A block hides what is listed; a post from a blocked member can still be opened by its link.
 
 ### Installing it as an app
 
@@ -170,8 +179,8 @@ running `npm run dev`.
 |---|---|
 | `/` | Home |
 | `/auth/register`, `/auth/login`, `/auth/reset` | Sign up, sign in, reset a forgotten password |
-| `/account`, `/account/contact` | Sign out, change password, delete the account; add email and mobile to an older account |
-| `/privacy`, `/delete-account` | Privacy policy; how to delete an account (both given to Google Play) |
+| `/account`, `/account/contact` | Sign out, blocked members, change password, delete the account; add email and mobile to an older account |
+| `/privacy`, `/delete-account`, `/terms` | Privacy policy; how to delete an account; terms of use, with "I agree" for an older account (all three given to Google Play) |
 | `/groups`, `/group/[id]` | Groups, a group's posts and chat |
 | `/common` | The common page: posts that have reached 20% of the groups (an admin setting), fastest spreading first |
 | `/disclosures` | The user's own posts ("Mine") |
@@ -203,7 +212,8 @@ running `npm run dev`.
 All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 `Authorization: Bearer <token>`. An account without its email and mobile number is answered
 403 with `code: "CONTACT_REQUIRED"` everywhere except `/auth/me`, `/auth/contact`,
-`/auth/password` and `/auth/signout-all`.
+`/auth/password` and `/auth/signout-all`. An account that has not agreed to the terms of use is
+answered 403 with `code: "TERMS_REQUIRED"` when it posts, comments or chats.
 
 | Route | Purpose |
 |---|---|
@@ -211,6 +221,9 @@ All routes are under `/api` and, except sign-up, sign-in, codes and reset, need
 | `POST /auth/verify/phone` | A Firebase ID token from a phone sign-in, exchanged for a confirmation of that number |
 | `POST /auth/register`, `POST /auth/login`, `POST /auth/reset` | Sign up (with both confirmations), sign in (username, email or mobile), new password with a confirmation |
 | `POST /auth/delete` | The member deletes their own account (with the password) and everything it wrote |
+| `POST /auth/terms` | Agree to the terms of use (sign-up sends `acceptTerms: true` instead) |
+| `POST /reports` | Report a post, comment or chat message the caller can see: `targetType`, `targetId`, `reason` (`harassment`, `hate`, `violence`, `sexual`, `personal_info`, `spam`, `other`), `detail`, `block` |
+| `POST /blocks`, `GET /blocks`, `DELETE /blocks/:id` | Block whoever wrote an item (`targetType`, `targetId`); the caller's blocks, by pseudonym; unblock |
 | `GET /auth/me`, `POST /auth/contact`, `POST /auth/password`, `POST /auth/signout-all` | The account and whether its contact details are complete; add them; change password; sign out everywhere |
 | `POST /auth/heartbeat`, `GET /auth/weight` | Time on the site; the member's own weightage |
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
@@ -235,6 +248,7 @@ confirmations, kept for a day at most), `Group`, `GroupMember`, `Post`, `PostPla
 groups a post is in now, with when it arrived), `PushVote` (per post and group),
 `PostHistory` (groups a post has left: arrival, departure, vote share), `Comment`, `ViewRecord` (first looks, and when the redacted version was
 shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatMessage`, `ProMicLink`,
+`Report` (members' reports, with what they saw and how the admin closed them), `Block`,
 `Setting` (rules an admin changed from their defaults) and `AdminAction` (the admin log). Admins also set
 `User.suspendedAt`, `Post.hiddenAt` and `Post.unlistedAt`. The tables are changed only through the migrations in
 `backend/prisma/migrations` (see [Changing the database](#changing-the-database)).
@@ -252,7 +266,8 @@ admin log.
 
 | Tab | What an admin can do |
 |---|---|
-| Dashboard | Accounts, activity, groups, posts and votes at a glance; the last 14 days; the latest admin actions |
+| Dashboard | Accounts, activity, groups, posts and votes at a glance; open reports; the last 14 days; the latest admin actions |
+| Reports | What members reported, one entry per item with every report (reason, detail, who, when) and its author; Remove (hides a post, deletes a comment or chat message) or Dismiss closes them all. Hiding or deleting the item elsewhere on the admin page closes its reports too. Closed reports stay listed with who closed them and how |
 | Accounts | Find an account by username, pseudonym, email address or mobile number (matched by fingerprint); see its groups, posts and days of use; suspend it (signs it out; it cannot sign in until restored), restore it, sign it out everywhere, or delete it with everything it wrote |
 | Posts | Every post with its original and redacted text and its author; hide a post (only its author and admins see it; it stops travelling and leaves the common page), unhide, unlist, delete; delete comments |
 | Common page | The listed posts in the order members and officers see them; unlist or relist one |

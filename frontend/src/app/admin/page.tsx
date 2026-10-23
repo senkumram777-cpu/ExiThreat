@@ -17,13 +17,15 @@ import Groups from '@/components/admin/Groups';
 import Officers from '@/components/admin/Officers';
 import Settings from '@/components/admin/Settings';
 import Log from '@/components/admin/Log';
+import Reports from '@/components/admin/Reports';
 import { Button, ErrorLine } from '@/components/admin/ui';
 import type { AdminNav } from '@/components/admin/nav';
 
-type Tab = 'dashboard' | 'accounts' | 'posts' | 'common' | 'groups' | 'officers' | 'settings' | 'log';
+type Tab = 'dashboard' | 'reports' | 'accounts' | 'posts' | 'common' | 'groups' | 'officers' | 'settings' | 'log';
 
 const TABS: [Tab, string][] = [
   ['dashboard', 'Dashboard'],
+  ['reports', 'Reports'],
   ['accounts', 'Accounts'],
   ['posts', 'Posts'],
   ['common', 'Common page'],
@@ -149,6 +151,7 @@ export default function AdminPage() {
             ))}
           </nav>
           {tab === 'dashboard' && <Dashboard />}
+          {tab === 'reports' && <Reports nav={nav} />}
           {tab === 'accounts' && <Accounts nav={nav} selected={userId} />}
           {tab === 'posts' && <Posts nav={nav} selected={postId} />}
           {tab === 'common' && <Posts nav={nav} selected={postId} commonPage />}

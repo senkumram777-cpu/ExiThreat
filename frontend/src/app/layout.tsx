@@ -3,6 +3,7 @@ import './globals.css';
 import NavLinks from '@/components/NavLinks';
 import ServiceWorker from '@/components/ServiceWorker';
 import ActivityHeartbeat from '@/components/ActivityHeartbeat';
+import { ReportBlockDialog } from '@/components/ReportBlock';
 
 export const metadata: Metadata = {
   title: 'ExiThreat',
@@ -46,9 +47,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-6">
           {children}
         </main>
+        {/* Report or block (the ⋯ on posts, comments and chat), over whichever page opened it. */}
+        <ReportBlockDialog />
 
         <footer className="border-t border-gray-800 py-4 text-center text-xs font-mono text-gray-700">
           ExiThreat · Security through Friction ·{' '}
+          <a href="/terms" className="text-gray-500">Terms</a> ·{' '}
           <a href="/privacy" className="text-gray-500">Privacy</a>
         </footer>
       </body>

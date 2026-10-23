@@ -42,7 +42,7 @@ export default function ResetPage() {
     try {
       const session = await auth.reset(channel, proof, password);
       saveSession(session);
-      router.push(session.needsContact ? '/account/contact' : '/groups');
+      router.push(session.needsContact ? '/account/contact' : session.needsTerms ? '/terms?agree=1' : '/groups');
     } catch (err) {
       setError((err as Error).message);
     } finally {

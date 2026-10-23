@@ -6,6 +6,8 @@ import { noteActiveDay } from '../services/groupWeightService';
 export interface AuthRequest extends Request {
   userId?: string;
   username?: string;
+  /** Whether the account has agreed to the terms of use (set by requireAuth). */
+  termsAccepted?: boolean;
 }
 
 /**
@@ -40,6 +42,9 @@ export const CONTACT_REQUIRED = 'CONTACT_REQUIRED';
 export const SUSPENDED = 'SUSPENDED';
 export const SUSPENDED_MESSAGE = 'This account has been suspended by an admin.';
 
+/** Answered, with this `code`, to writing anything before agreeing to the terms of use. */
+export const TERMS_REQUIRED = 'TERMS_REQUIRED';
+
 /**
  * A valid sign-in to an account that has its email address and mobile number. Older
  * accounts without them are refused with CONTACT_REQUIRED until they add them.
@@ -51,6 +56,18 @@ export function requireAuth(req: AuthRequest, res: Response, next: NextFunction)
 /** A valid sign-in, with or without contact details: for adding them and managing the account. */
 export function requireSignedIn(req: AuthRequest, res: Response, next: NextFunction): void {
   checkToken(req, res, next, false);
+}
+
+/**
+ * After requireAuth, on routes that publish what a member writes (posts, comments, chat):
+ * accounts that have not agreed to the terms of use are refused with TERMS_REQUIRED.
+ */
+export function requireTerms(req: AuthRequest, res: Response, next: NextFunction): void {
+  if (!req.termsAccepted) {
+    res.status(403).json({ error: 'Agree to the terms of use to post, comment or chat.', code: TERMS_REQUIRED });
+    return;
+  }
+  next();
 }
 
 function checkToken(req: AuthRequest, res: Response, next: NextFunction, needContact: boolean): void {
@@ -72,7 +89,9 @@ function checkToken(req: AuthRequest, res: Response, next: NextFunction, needCon
   prisma.user
     .findUnique({
       where: { id: payload.userId },
-      select: { username: true, tokensValidFrom: true, emailHash: true, phoneHash: true, suspendedAt: true },
+      select: {
+        username: true, tokensValidFrom: true, emailHash: true, phoneHash: true, suspendedAt: true, termsAcceptedAt: true,
+      },
     })
     .then((user) => {
       const validFrom = user?.tokensValidFrom ? Math.floor(user.tokensValidFrom.getTime() / 1000) : 0;
@@ -90,6 +109,7 @@ function checkToken(req: AuthRequest, res: Response, next: NextFunction, needCon
       }
       req.userId = payload.userId;
       req.username = user.username;
+      req.termsAccepted = !!user.termsAcceptedAt;
       // Days of use count towards the weight of the user's group.
       void noteActiveDay(payload.userId);
       next();

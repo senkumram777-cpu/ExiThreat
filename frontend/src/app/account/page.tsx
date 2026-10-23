@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, type MyWeight } from '@/lib/api';
+import { auth, moderation, type BlockedMember, type MyWeight } from '@/lib/api';
 import { clearSession, getSession, saveSession } from '@/lib/session';
 import PasswordInput from '@/components/PasswordInput';
 import DeleteAccount from '@/components/DeleteAccount';
@@ -93,6 +93,8 @@ export default function AccountPage() {
 
       {weight && <WeightCard weight={weight} />}
 
+      <BlockedMembers />
+
       <section className="flex flex-col gap-3">
         <button
           onClick={signOut}
@@ -161,6 +163,53 @@ export default function AccountPage() {
 
       <DeleteAccount />
     </div>
+  );
+}
+
+/** The members this account has blocked (from a post, comment or chat message's ⋯ button). */
+function BlockedMembers() {
+  const [blocked, setBlocked] = useState<BlockedMember[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    moderation.blocked().then(setBlocked).catch((err) => setError((err as Error).message));
+  }, []);
+
+  const unblock = async (id: string) => {
+    setError(null);
+    try {
+      await moderation.unblock(id);
+      setBlocked((prev) => prev?.filter((b) => b.id !== id) ?? null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-sm font-mono text-gray-400 uppercase tracking-widest">Blocked members</h2>
+      {blocked && blocked.length === 0 && (
+        <p className="text-xs font-mono text-gray-500 leading-relaxed">
+          Nobody. To block someone, tap ⋯ on one of their posts, comments or chat messages.
+        </p>
+      )}
+      {blocked && blocked.length > 0 && (
+        <ul className="flex flex-col gap-2">
+          {blocked.map((b) => (
+            <li key={b.id} className="flex items-center justify-between gap-2 p-3 bg-navy-800 border border-gray-800 rounded-lg font-mono text-sm">
+              <span className="text-gray-200 break-all">{b.author}</span>
+              <button
+                onClick={() => unblock(b.id)}
+                className="px-3 py-1 border border-gray-600 text-gray-300 rounded-lg text-xs hover:border-accent-teal hover:text-accent-teal"
+              >
+                Unblock
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <div className="text-accent-red text-xs font-mono">{error}</div>}
+    </section>
   );
 }
 

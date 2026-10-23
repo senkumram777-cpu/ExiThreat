@@ -133,6 +133,7 @@ async function registerWith(username: string, email: string, phone: string): Pro
   return call('POST', '/auth/register', undefined, {
     username,
     password: PASSWORD,
+    acceptTerms: true,
     emailVerificationId: await confirm('email', email),
     phoneVerificationId: await confirm('phone', phone),
   });
@@ -183,12 +184,20 @@ async function accountChecks(): Promise<void> {
     (await registerWith('asha3', newContact().email, `+91 ${asha.phone.slice(0, 5)} ${asha.phone.slice(5)}`)).status === 409);
   const reused = await confirm('email', newContact().email);
   await call('POST', '/auth/register', undefined, {
-    username: 'once', password: PASSWORD, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
+    username: 'once', password: PASSWORD, acceptTerms: true, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
   });
   check('a confirmation is used up by the sign-up it was for',
     (await call('POST', '/auth/register', undefined, {
-      username: 'twice', password: PASSWORD, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
+      username: 'twice', password: PASSWORD, acceptTerms: true, emailVerificationId: reused, phoneVerificationId: await confirm('phone', newContact().phone),
     })).status === 400);
+  r = await call('POST', '/auth/register', undefined, {
+    username: 'no_terms', password: PASSWORD,
+    emailVerificationId: await confirm('email', newContact().email), phoneVerificationId: await confirm('phone', newContact().phone),
+  });
+  check('sign-up without agreeing to the terms of use is refused', r.status === 400 && /terms/.test(r.data.error), r.data);
+  check('a new account has agreed to them',
+    (await prisma.user.findUniqueOrThrow({ where: { username: 'asha' } })).termsAcceptedAt !== null
+      && (await call('GET', '/auth/me', ashaToken)).data.termsAccepted === true);
   check('a username of digits only is refused', (await registerWith('9876501234', newContact().email, newContact().phone)).status === 400);
 
   // ── sign in with any of the three ──
@@ -644,6 +653,7 @@ async function run(): Promise<void> {
   check('a database error is answered as JSON, without details', r.status === 500 && r.json && !/prisma/i.test(JSON.stringify(r.data)), r.data);
 
   await adminChecks({ u1, reader, newcomer, spreadId, cycleId, postId, groups });
+  await moderationChecks();
 }
 
 async function adminChecks(t: {
@@ -771,6 +781,112 @@ async function adminChecks(t: {
   check('every change is in the log, with the admin', r.status === 200 && r.data.total >= 15
     && r.data.actions.every((a: { adminEmail: string }) => a.adminEmail === 'alice@example.com')
     && r.data.actions.some((a: { action: string }) => a.action === 'user.suspend'), r.data.total);
+}
+
+/** Terms of use, reports and blocks, in a group of their own. */
+async function moderationChecks(): Promise<void> {
+  const ADMIN = 'test-admin:alice';
+  const [viewer, writer, other] = [await register('mod_viewer'), await register('mod_writer'), await register('mod_other')];
+  await prisma.groupMember.deleteMany({ where: { userId: { in: [viewer.userId, writer.userId, other.userId] } } });
+  const group = await prisma.group.create({ data: { name: 'Moderation' } });
+  for (const u of [viewer, writer]) await prisma.groupMember.create({ data: { groupId: group.id, userId: u.userId } });
+  const outsiderGroup = await prisma.group.create({ data: { name: 'Elsewhere' } });
+  await prisma.groupMember.create({ data: { groupId: outsiderGroup.id, userId: other.userId } });
+  const post = await prisma.post.create({
+    data: {
+      originalContent: 'Abusive original.', redactedContent: 'Abusive redacted.', ocUserId: writer.userId,
+      placements: { create: { groupId: group.id } },
+    },
+  });
+  // Listed on the common page, so that blocking can be seen there too.
+  await prisma.post.update({ where: { id: post.id }, data: { listedAt: new Date(), reachedGroups: 1, eligibleGroups: 1, spreadScore: 1 } });
+  const comment = (await call('POST', `/posts/${post.id}/comments`, writer.token, { content: 'A nasty comment.' })).data;
+  const chat = (await call('POST', `/groups/${group.id}/chat`, writer.token, { content: 'A nasty message.' })).data;
+
+  // ── terms of use ──
+  await prisma.user.update({ where: { id: other.userId }, data: { termsAcceptedAt: null } });
+  let r = await call('POST', `/groups/${outsiderGroup.id}/chat`, other.token, { content: 'Hello?' });
+  check('an account that has not agreed to the terms cannot chat', r.status === 403 && r.data.code === 'TERMS_REQUIRED', r.data);
+  check('nor post', (await call('POST', '/posts', other.token, { content: 'A post that is long enough to be one.' })).data.code === 'TERMS_REQUIRED');
+  check('but it can still read', (await call('GET', `/groups/${outsiderGroup.id}/chat`, other.token)).status === 200);
+  r = await call('POST', '/auth/login', undefined, { identifier: 'mod_other', password: PASSWORD });
+  check('signing in tells it to agree first', r.status === 200 && r.data.needsTerms === true, r.data);
+  check('it agrees', (await call('POST', '/auth/terms', other.token)).status === 200
+    && (await call('GET', '/auth/me', other.token)).data.termsAccepted === true);
+  check('and then it can chat', (await call('POST', `/groups/${outsiderGroup.id}/chat`, other.token, { content: 'Hello.' })).status === 201);
+
+  // ── reports ──
+  check('a report needs a known reason',
+    (await call('POST', '/reports', viewer.token, { targetType: 'post', targetId: post.id, reason: 'boring' })).status === 400);
+  check('nothing outside the reader\'s groups can be reported',
+    (await call('POST', '/reports', other.token, { targetType: 'chat', targetId: chat.id, reason: 'spam' })).status === 404
+      && (await call('POST', '/reports', other.token, { targetType: 'comment', targetId: comment.id, reason: 'spam' })).status === 404);
+  check('one\'s own writing cannot be reported',
+    (await call('POST', '/reports', writer.token, { targetType: 'chat', targetId: chat.id, reason: 'spam' })).status === 400);
+  r = await call('POST', '/reports', viewer.token, { targetType: 'post', targetId: post.id, reason: 'harassment', detail: 'Names a colleague.' });
+  check('a member reports a post in their group', r.status === 201 && r.data.alreadyReported === false, r.data);
+  check('reporting it again changes nothing',
+    (await call('POST', '/reports', viewer.token, { targetType: 'post', targetId: post.id, reason: 'spam' })).data.alreadyReported === true
+      && (await prisma.report.count({ where: { targetId: post.id } })) === 1);
+  check('a post on the common page can be reported by anyone',
+    (await call('POST', '/reports', other.token, { targetType: 'post', targetId: post.id, reason: 'hate' })).status === 201);
+  check('and a comment and a chat message',
+    (await call('POST', '/reports', viewer.token, { targetType: 'comment', targetId: comment.id, reason: 'violence' })).status === 201
+      && (await call('POST', '/reports', viewer.token, { targetType: 'chat', targetId: chat.id, reason: 'sexual' })).status === 201);
+  const stored = await prisma.report.findFirstOrThrow({ where: { targetId: post.id, reporterId: viewer.userId } });
+  check('the report keeps what the reporter saw, and who wrote it',
+    stored.content === 'Abusive redacted.' && stored.authorId === writer.userId && stored.detail === 'Names a colleague.');
+
+  // ── blocks ──
+  check('one cannot block oneself', (await call('POST', '/blocks', writer.token, { targetType: 'post', targetId: post.id })).status === 400);
+  r = await call('POST', '/blocks', viewer.token, { targetType: 'comment', targetId: comment.id });
+  const writerPseudonym = (await prisma.user.findUniqueOrThrow({ where: { id: writer.userId } })).pseudonym;
+  check('a member blocks the writer of a comment, told only the pseudonym',
+    r.status === 201 && r.data.author === writerPseudonym && !JSON.stringify(r.data).includes(writer.userId), r.data);
+  check('their comments are gone for the blocker',
+    (await call('GET', `/posts/${post.id}/comments`, viewer.token)).data.every((c: { id: string }) => c.id !== comment.id));
+  check('and their chat', (await call('GET', `/groups/${group.id}/chat`, viewer.token)).data.every((m: { id: string }) => m.id !== chat.id));
+  check('and their posts, in the group and on the common page',
+    (await call('GET', `/groups/${group.id}`, viewer.token)).data.currentPosts.every((p: { id: string }) => p.id !== post.id)
+      && (await call('GET', '/common', viewer.token)).data.posts.every((p: { id: string }) => p.id !== post.id));
+  check('others still see them',
+    (await call('GET', '/common', other.token)).data.posts.some((p: { id: string }) => p.id === post.id)
+      && (await call('GET', `/posts/${post.id}/comments`, writer.token)).data.some((c: { id: string }) => c.id === comment.id));
+  r = await call('GET', '/blocks', viewer.token);
+  check('the block list shows pseudonyms only',
+    r.status === 200 && r.data.length === 1 && r.data[0].author === writerPseudonym && !JSON.stringify(r.data).includes(writer.userId), r.data);
+  check('nobody else can remove the block', (await call('DELETE', `/blocks/${r.data[0].id}`, other.token)).status === 404);
+  check('unblocking brings them back',
+    (await call('DELETE', `/blocks/${r.data[0].id}`, viewer.token)).status === 200
+      && (await call('GET', `/groups/${group.id}/chat`, viewer.token)).data.some((m: { id: string }) => m.id === chat.id));
+  check('reporting with block also blocks',
+    (await call('POST', '/reports', viewer.token, { targetType: 'chat', targetId: chat.id, reason: 'sexual', block: true })).data.blocked === true
+      && (await call('GET', '/blocks', viewer.token)).data.length === 1);
+
+  // ── the admin's Reports tab ──
+  r = await call('GET', '/admin/reports', ADMIN);
+  const postItem = r.data.items?.find((i: { targetId: string }) => i.targetId === post.id);
+  check('the admin sees one entry per item, with each report and the author',
+    r.status === 200 && r.data.items.length === 3 && postItem?.reports.length === 2 && postItem?.author.id === writer.userId
+      && postItem?.exists === true && r.data.items[0].targetId === post.id, r.data);
+  check('members cannot see reports', (await call('GET', '/admin/reports', viewer.token)).status === 401);
+  check('dismissing closes the reports about an item',
+    (await call('POST', '/admin/reports/resolve', ADMIN, { targetType: 'comment', targetId: comment.id, action: 'dismiss' })).status === 200
+      && (await prisma.comment.count({ where: { id: comment.id } })) === 1
+      && (await prisma.report.findFirstOrThrow({ where: { targetId: comment.id } })).resolution === 'dismissed');
+  check('removing a reported post hides it',
+    (await call('POST', '/admin/reports/resolve', ADMIN, { targetType: 'post', targetId: post.id, action: 'remove' })).status === 200
+      && (await prisma.post.findUniqueOrThrow({ where: { id: post.id } })).hiddenAt !== null
+      && (await prisma.report.count({ where: { targetId: post.id, resolvedAt: null } })) === 0);
+  check('deleting a reported message from Groups & chat closes its reports too',
+    (await call('DELETE', `/admin/chat/${chat.id}`, ADMIN)).status === 200
+      && (await prisma.report.findFirstOrThrow({ where: { targetId: chat.id } })).resolution === 'removed');
+  r = await call('GET', '/admin/reports', ADMIN);
+  check('nothing is left open', r.data.items.length === 0 && (await call('GET', '/admin/overview', ADMIN)).data.reports.open === 0, r.data);
+  r = await call('GET', '/admin/reports?status=resolved', ADMIN);
+  check('closed reports are listed with what was done', r.data.items.length === 3
+    && r.data.items.find((i: { targetId: string }) => i.targetId === chat.id)?.exists === false, r.data);
+  check('it is all in the log', (await prisma.adminAction.count({ where: { action: { in: ['report.dismiss', 'report.remove'] } } })) === 2);
 }
 
 async function main(): Promise<void> {

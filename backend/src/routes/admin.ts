@@ -53,6 +53,15 @@ function snippet(content: string, length = 80): string {
   return line.length > length ? `${line.slice(0, length)}…` : line;
 }
 
+/** Closes the open member reports about an item (routes/moderation.ts), as `resolution`. */
+async function resolveReports(req: AdminRequest, targetType: string, targetId: string, resolution: 'removed' | 'dismissed') {
+  const done = await prisma.report.updateMany({
+    where: { targetType, targetId, resolvedAt: null },
+    data: { resolvedAt: new Date(), resolution, resolvedBy: req.admin!.email },
+  });
+  return done.count;
+}
+
 // ── Who is signed in ────────────────────────────────────────────────────────────────────────
 
 router.get('/me', (req: AdminRequest, res: Response) => {
@@ -98,6 +107,7 @@ router.get('/overview', handle(async (req: AdminRequest, res: Response): Promise
     prisma.adminAction.findMany({ orderBy: { at: 'desc' }, take: 8 }),
   ]);
   const groups = await prisma.group.count();
+  const openReports = await prisma.report.count({ where: { resolvedAt: null } });
 
   const countBy = (dates: Date[]) => {
     const counts = new Map<string, number>();
@@ -113,6 +123,7 @@ router.get('/overview', handle(async (req: AdminRequest, res: Response): Promise
     groups: { total: groups, takingPosts: groupSizes.filter((g) => g._count._all >= groupMinMembers()).length },
     posts: { total: posts, newThisWeek: newPosts, hidden, onCommonPage: onCommon, unlisted },
     activity: { comments, chatMessages: chat, votes, firstLooksThisWeek: firstLooks },
+    reports: { open: openReports },
     days: days.map((day) => ({ day, joined: joined.get(day) ?? 0, posted: posted.get(day) ?? 0, active: active.get(day) ?? 0 })),
     recentActions,
   });
@@ -359,6 +370,7 @@ async function setPost(req: AdminRequest, res: Response, data: Prisma.PostUpdate
 router.post('/posts/:id/hide', handle(async (req: AdminRequest, res: Response): Promise<void> => {
   const reason = text(req.body?.reason, 300);
   await setPost(req, res, { hiddenAt: new Date(), hiddenReason: reason || null }, 'post.hide', reason);
+  await resolveReports(req, 'post', req.params.id, 'removed');
 }));
 
 router.post('/posts/:id/unhide', handle(async (req: AdminRequest, res: Response): Promise<void> => {
@@ -382,6 +394,7 @@ router.delete('/posts/:id', handle(async (req: AdminRequest, res: Response): Pro
   }
   await prisma.post.delete({ where: { id: post.id } });
   await log(req, 'post.delete', 'post', post.id, snippet(post.originalContent));
+  await resolveReports(req, 'post', post.id, 'removed');
   res.json({ ok: true });
 }));
 
@@ -393,6 +406,7 @@ router.delete('/comments/:id', handle(async (req: AdminRequest, res: Response): 
   }
   await prisma.comment.delete({ where: { id: comment.id } });
   await log(req, 'comment.delete', 'comment', comment.id, `on post ${comment.postId}: ${snippet(comment.content)}`);
+  await resolveReports(req, 'comment', comment.id, 'removed');
   res.json({ ok: true });
 }));
 
@@ -426,7 +440,114 @@ router.delete('/chat/:id', handle(async (req: AdminRequest, res: Response): Prom
   }
   await prisma.chatMessage.delete({ where: { id: message.id } });
   await log(req, 'chat.delete', 'chat', message.id, `in group ${message.groupId}: ${snippet(message.content)}`);
+  await resolveReports(req, 'chat', message.id, 'removed');
   res.json({ ok: true });
+}));
+
+// ── Reports from members ────────────────────────────────────────────────────────────────────
+
+const PERSON = { select: { id: true, username: true, pseudonym: true } } as const;
+
+// GET /reports?status=open|resolved — members' reports (routes/moderation.ts), one entry per
+// reported item with every report about it. Open: the most reported first, then the oldest.
+router.get('/reports', handle(async (req: AdminRequest, res: Response): Promise<void> => {
+  const resolved = req.query.status === 'resolved';
+  const reports = await prisma.report.findMany({
+    where: { resolvedAt: resolved ? { not: null } : null },
+    orderBy: { createdAt: resolved ? 'desc' : 'asc' },
+    take: 500,
+    select: {
+      id: true, targetType: true, targetId: true, reason: true, detail: true, content: true, createdAt: true,
+      resolvedAt: true, resolution: true, resolvedBy: true,
+      reporter: PERSON,
+      author: { select: { id: true, username: true, pseudonym: true, suspendedAt: true } },
+    },
+  });
+
+  const idsOf = (type: string) => [...new Set(reports.filter((r) => r.targetType === type).map((r) => r.targetId))];
+  const [posts, comments, messages] = await Promise.all([
+    prisma.post.findMany({ where: { id: { in: idsOf('post') } }, select: { id: true, hiddenAt: true } }),
+    prisma.comment.findMany({ where: { id: { in: idsOf('comment') } }, select: { id: true, postId: true } }),
+    prisma.chatMessage.findMany({ where: { id: { in: idsOf('chat') } }, select: { id: true, groupId: true } }),
+  ]);
+  const postsById = new Map(posts.map((p) => [p.id, p]));
+  const commentsById = new Map(comments.map((c) => [c.id, c]));
+  const messagesById = new Map(messages.map((m) => [m.id, m]));
+
+  type Row = (typeof reports)[number];
+  type Item = {
+    targetType: string; targetId: string; content: string; author: Row['author'];
+    /** Still there; for a post, whether it is hidden; where a comment or message is. */
+    exists: boolean; hidden: boolean; postId: string | null; groupId: string | null;
+    resolution: string | null; resolvedAt: Date | null; resolvedBy: string | null;
+    reports: { id: string; reason: string; detail: string | null; createdAt: Date; reporter: Row['reporter'] }[];
+  };
+  const items = new Map<string, Item>();
+  for (const r of reports) {
+    const key = `${r.targetType}:${r.targetId}`;
+    let item = items.get(key);
+    if (!item) {
+      const post = r.targetType === 'post' ? postsById.get(r.targetId) : undefined;
+      const comment = r.targetType === 'comment' ? commentsById.get(r.targetId) : undefined;
+      const message = r.targetType === 'chat' ? messagesById.get(r.targetId) : undefined;
+      item = {
+        targetType: r.targetType,
+        targetId: r.targetId,
+        content: r.content,
+        author: r.author,
+        exists: !!(post ?? comment ?? message),
+        hidden: !!post?.hiddenAt,
+        postId: post?.id ?? comment?.postId ?? null,
+        groupId: message?.groupId ?? null,
+        resolution: r.resolution,
+        resolvedAt: r.resolvedAt,
+        resolvedBy: r.resolvedBy,
+        reports: [],
+      };
+      items.set(key, item);
+    }
+    item.reports.push({ id: r.id, reason: r.reason, detail: r.detail, createdAt: r.createdAt, reporter: r.reporter });
+  }
+  const list = [...items.values()];
+  if (!resolved) {
+    list.sort((a, b) => b.reports.length - a.reports.length
+      || a.reports[0].createdAt.getTime() - b.reports[0].createdAt.getTime());
+  }
+  res.json({ items: list });
+}));
+
+// POST /reports/resolve — {targetType, targetId, action: "remove" | "dismiss", reason?}. Remove
+// hides a post (as Hide does) or deletes a comment or chat message; either way every open report
+// about the item is closed.
+router.post('/reports/resolve', handle(async (req: AdminRequest, res: Response): Promise<void> => {
+  const targetType = text(req.body?.targetType, 16);
+  const targetId = text(req.body?.targetId, 64);
+  const action = req.body?.action;
+  const reason = text(req.body?.reason, 300);
+  if (!['post', 'comment', 'chat'].includes(targetType) || !targetId || (action !== 'remove' && action !== 'dismiss')) {
+    res.status(400).json({ error: 'targetType (post, comment or chat), targetId and action (remove or dismiss) are needed' });
+    return;
+  }
+  const open = await prisma.report.count({ where: { targetType, targetId, resolvedAt: null } });
+  if (open === 0) {
+    res.status(404).json({ error: 'No open report about this' });
+    return;
+  }
+  if (action === 'remove') {
+    if (targetType === 'post') {
+      await prisma.post.updateMany({
+        where: { id: targetId, hiddenAt: null },
+        data: { hiddenAt: new Date(), hiddenReason: reason || 'Reported by members' },
+      });
+    } else if (targetType === 'comment') {
+      await prisma.comment.deleteMany({ where: { id: targetId } });
+    } else {
+      await prisma.chatMessage.deleteMany({ where: { id: targetId } });
+    }
+  }
+  const closed = await resolveReports(req, targetType, targetId, action === 'remove' ? 'removed' : 'dismissed');
+  await log(req, `report.${action}`, targetType, targetId, reason || `${closed} report${closed === 1 ? '' : 's'}`);
+  res.json({ ok: true, closed });
 }));
 
 // ── Groups ──────────────────────────────────────────────────────────────────────────────────

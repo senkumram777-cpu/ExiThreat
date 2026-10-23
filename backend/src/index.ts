@@ -13,6 +13,7 @@ import weightageRouter from './routes/weightage';
 import promicRouter from './routes/promic';
 import commonRouter from './routes/common';
 import adminRouter from './routes/admin';
+import moderationRouter from './routes/moderation';
 import { loadRules, rule } from './services/settings';
 
 export const prisma = new PrismaClient();
@@ -58,6 +59,7 @@ app.use('/api/weightage', weightageRouter);
 app.use('/api/promic', promicRouter);
 app.use('/api/common', commonRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api', moderationRouter);
 
 // The rules the website mentions in its text, as an admin has set them (services/rules.ts).
 app.get('/api/rules', (_req, res) => {
