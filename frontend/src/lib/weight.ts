@@ -8,12 +8,17 @@ function trim(n: number): string {
   return n >= 10 ? Math.round(n).toString() : n.toFixed(1).replace(/\.0$/, '');
 }
 
+/** "1 group" (also for 0.97, shown as 1) or "2.3 groups": singular or plural as the number is shown. */
+function groups(n: number): string {
+  const shown = trim(n);
+  return `${shown} group${shown === '1' ? '' : 's'}`;
+}
+
 /** "Backed by 2.3 groups", "Backed by 40% of a group", or "Not pushed yet". */
 export function backedBy(totalWeight: number): string {
   if (totalWeight <= 0) return 'Not pushed yet';
   if (totalWeight < 100) return `Backed by ${Math.round(totalWeight)}% of a group`;
-  const groups = totalWeight / 100;
-  return `Backed by ${trim(groups)} group${groups === 1 ? '' : 's'}`;
+  return `Backed by ${groups(totalWeight / 100)}`;
 }
 
 /** A group's vote share, as a whole percentage. */
@@ -26,5 +31,5 @@ export function groupsPerDay(spreadScore: number, eligibleGroups: number): strin
   const n = spreadScore * eligibleGroups;
   if (n <= 0) return '0 groups a day';
   if (n < 0.1) return '< 0.1 groups a day';
-  return `≈ ${trim(n)} group${n === 1 ? '' : 's'} a day`;
+  return `≈ ${groups(n)} a day`;
 }
