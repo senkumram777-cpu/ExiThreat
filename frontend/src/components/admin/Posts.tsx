@@ -5,6 +5,7 @@ import { admin, type AdminPost } from '@/lib/adminApi';
 import { Badge, Button, Card, ErrorLine, Loading, Pager, SearchBox, Tabs, confirmAction, percent, useLoad, when } from './ui';
 import type { AdminNav } from './nav';
 import { groupsPerDay } from '@/lib/weight';
+import CategoryTag from '@/components/CategoryTag';
 
 type Filter = 'all' | 'common' | 'hidden' | 'unlisted';
 
@@ -112,6 +113,7 @@ function PostDetail({ id, nav, onChanged }: { id: string; nav: AdminNav; onChang
           <span>{p.author.pseudonym}</span>
           <span>{when(p.createdAt)}</span>
           <PostBadges post={p} />
+          <CategoryTag category={p.category} />
         </div>
         {p.hiddenAt && (
           <div className="text-xs font-mono text-accent-red mb-3">Hidden {when(p.hiddenAt)}{p.hiddenReason ? ` — ${p.hiddenReason}` : ''}</div>

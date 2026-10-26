@@ -1,6 +1,7 @@
 # ExiThreat
 
-ExiThreat is an installable web app (PWA) for disclosing workplace abuse safely. A complaint is
+ExiThreat is an installable web app (PWA) for disclosing abuse and threats safely: "Spotlight the abusers behind any threat to you, wherever it happened".
+It covers any threat to a person (at work, on the street, in your neighbourhood, by a police or government official, sexual or physical abuse, at home or online), not only abuse at work. A complaint is
 never public: it is shown to one small group at a time, each member sees the unredacted text
 only once, and it moves on to another group when enough members vote to pass it on. How far it
 travels becomes a measure of how many people found it credible.
@@ -86,9 +87,14 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
        measure as in the group weight. Left out until they have had a post to go through.
      Recalculated every hour, whenever the member opens their Account page, and when they push
      their own post. It decides how far that push reaches (step 7).
-3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters. The
+3. **Disclosure.** The author (the "Original Complainant") writes at least 20 characters and
+   may choose the **type of threat** (`backend/src/services/categories.ts`: workplace, street or
+   public place, neighbourhood, police or government official, sexual abuse, physical abuse,
+   domestic or family, online, other), shown as a tag wherever the post appears. The
    server makes a redacted copy, replacing emails, phone numbers, names, companies, addresses,
-   URLs, dates and ID numbers (Indian and US formats) with labels such as `[NAME REDACTED]`.
+   URLs, dates, ID numbers (Indian and US formats), vehicle numbers, badge, FIR and case numbers,
+   and named places such as police stations, offices, markets and temples ("[PLACE REDACTED]
+   Police Station") with labels such as `[NAME REDACTED]`.
    The author must look at that redacted version before submitting ("Preview redaction"), and
    finds their posts again under "Mine". The server places the post in a random group
    that has at least 5 members and that the author is not in. If there is no such group yet,
@@ -153,7 +159,7 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
     keeps spreading quickly and falls as it slows or ages. Each entry shows the author's
     pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
     Every registered member sees the redacted version only. Officers see both the original
-    and the redacted version (next section).
+    and the redacted version (next section). Both can list one type of threat at a time.
 13. **Terms, reporting and blocking.** Signing up needs agreeing to the terms of use (`/terms`);
     an account made before there were terms can read but not post, comment or chat until it
     agrees (the server answers 403 `code: "TERMS_REQUIRED"`, and the website and app open the
@@ -231,8 +237,8 @@ answered 403 with `code: "TERMS_REQUIRED"` when it posts, comments or chats.
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip (a PNG in base64, drawn in rows, with each row's width), close the first look |
 | `POST /posts/preview`, `GET /posts/mine` | The redacted version of a text before it is posted; the caller's own posts |
 | `GET /posts/:id/map` | Author only: every group by name and weight, which it covered in this round, passed through and is in now, the path between them, and the round |
-| `GET /common?offset=` | The common page, 30 at a time: redacted versions, by pseudonym (members) |
-| `GET /common/officer?offset=` | The same with the original versions, for an officer's ProMic session token |
+| `GET /common?offset=&category=` | The common page, 30 at a time: redacted versions, by pseudonym (members); `category` keeps one type of threat |
+| `GET /common/officer?offset=&category=` | The same with the original versions, for an officer's ProMic session token |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |

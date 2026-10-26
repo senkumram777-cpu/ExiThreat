@@ -20,8 +20,8 @@ export default function HomePage() {
           ExiThreat
         </div>
         <p className="text-gray-400 font-mono text-sm max-w-md leading-relaxed">
-          A secure, anonymous platform for disclosing workplace abuses. Your story
-          travels through isolated peer groups — never public, always protected.
+          Spotlight the abusers behind any threat to you, wherever it happened. At work, on the street, in your neighbourhood, at home or by an official:
+          your story travels through isolated peer groups, under a pseudonym, always protected.
         </p>
         <div className="flex flex-wrap justify-center gap-3 mt-2">
           {isLoggedIn ? (

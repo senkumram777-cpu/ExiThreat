@@ -296,15 +296,19 @@ async function run(): Promise<void> {
   check('preview shows the redacted text and saves nothing',
     r.status === 200 && !/Ravi|Kumar|Sunrise|9876543210/.test(r.data.redactedContent) && (await prisma.post.count()) === 0, r.data);
   check('a post over 5,000 characters is refused', (await call('POST', '/posts', u1.token, { content: 'x'.repeat(5001) })).status === 400);
-  r = await call('POST', '/posts', u1.token, { content: text });
+  check('an unknown type of threat is refused',
+    (await call('POST', '/posts', u1.token, { content: text, category: 'nonsense' })).status === 400 && (await prisma.post.count()) === 0);
+  r = await call('POST', '/posts', u1.token, { content: text, category: 'workplace' });
   check('a post goes to one group its author is not in', r.status === 201 && r.data.groupId !== groups.A, r.data);
+  check('it keeps the type of threat its author chose', r.data.category === 'workplace', r.data);
   const postId: string = r.data.id;
   const firstGroup: string = r.data.groupId;
   const [reader, second] = membersOf(firstGroup);
   const [outsider] = membersOf(firstGroup === groups.B ? groups.C : groups.B);
 
   r = await call('GET', '/posts/mine', u1.token);
-  check('the author finds it under their own posts', r.status === 200 && r.data.length === 1 && r.data[0].id === postId, r.data);
+  check('the author finds it under their own posts', r.status === 200 && r.data.length === 1 && r.data[0].id === postId
+    && r.data[0].category === 'workplace', r.data);
   check('nobody else has it under theirs', (await call('GET', '/posts/mine', reader.token)).data.length === 0);
 
   // ── who can read ──
@@ -619,6 +623,16 @@ async function run(): Promise<void> {
     && officerSpread?.redactedContent === spreadPost.redactedContent && officerSpread?.author === u1Me.pseudonym, officerSpread);
   check('a member\'s token is not an officer\'s', (await call('GET', '/common/officer', u1.token)).status === 401
     && (await call('GET', '/common/officer')).status === 401);
+  // The common page by type of threat.
+  await prisma.post.update({ where: { id: spreadId }, data: { category: 'official' } });
+  const idsFor = async (path: string, token: string) => ((await call('GET', path, token)).data.posts ?? [])
+    .map((p: { id: string; category: string | null }) => `${p.id}:${p.category}`);
+  check('the common page lists one type of threat when asked',
+    JSON.stringify(await idsFor('/common?category=official', newcomer.token)) === JSON.stringify([`${spreadId}:official`])
+      && (await idsFor('/common?category=street', newcomer.token)).length === 0
+      && (await idsFor('/common?category=nonsense', newcomer.token)).length === listedIds.length
+      && JSON.stringify(await idsFor('/common/officer?category=official', 'test-officer:officer-1'))
+        === JSON.stringify([`${spreadId}:official`]));
 
   // ── a member's own weightage ──
   check('time on the site is added to the day',

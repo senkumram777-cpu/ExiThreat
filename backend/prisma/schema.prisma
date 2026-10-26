@@ -90,6 +90,8 @@ model Post {
   id               String    @id @default(uuid())
   originalContent  String    // plain text in the database; sent to clients only as a PNG
   redactedContent  String
+  // The type of threat, chosen by the author (services/categories.ts); null when none was chosen.
+  category         String?
   ocUserId         String
   totalWeight      Float     @default(0.0)
   lastManualPushAt DateTime?

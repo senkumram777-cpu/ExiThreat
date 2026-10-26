@@ -18,7 +18,7 @@ export default function CommonPageView() {
     else setReady(true);
   }, [router]);
 
-  const load = useCallback((offset: number) => common.list(offset), []);
+  const load = useCallback((offset: number, category: string) => common.list(offset, category), []);
 
   if (!ready) return null;
   return (

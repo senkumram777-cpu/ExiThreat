@@ -7,7 +7,7 @@ import { ReportBlockDialog } from '@/components/ReportBlock';
 
 export const metadata: Metadata = {
   title: 'ExiThreat',
-  description: 'Secure workplace disclosure platform',
+  description: 'Spotlight the abusers behind any threat to you, wherever it happened',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

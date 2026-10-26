@@ -72,6 +72,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       select: {
         id: true,
         redactedContent: true,
+        category: true,
         totalWeight: true,
         createdAt: true,
         oc: { select: { pseudonym: true } },

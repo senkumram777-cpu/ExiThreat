@@ -72,6 +72,8 @@ export interface BlockedMember {
 export interface Post {
   id: string;
   redactedContent: string;
+  /** The type of threat its author chose (lib/categories.ts); null when none. */
+  category: string | null;
   totalWeight: number;
   createdAt: string;
   /** The reader's own group among those the post is in (null for the author). */
@@ -109,6 +111,7 @@ export interface CommonPost {
   /** The author's pseudonym. */
   author: string;
   redactedContent: string;
+  category: string | null;
   /** Officers only. */
   originalContent?: string;
   createdAt: string;
@@ -171,6 +174,7 @@ export interface GroupMap {
 export interface MyPost {
   id: string;
   redactedContent: string;
+  category: string | null;
   totalWeight: number;
   createdAt: string;
   lastManualPushAt: string | null;
@@ -216,6 +220,7 @@ export interface GroupDetail extends Group {
   currentPosts: Array<{
     id: string;
     redactedContent: string;
+    category: string | null;
     totalWeight: number;
     createdAt: string;
     /** The author's pseudonym. */
@@ -425,8 +430,9 @@ export const auth = {
 // ── Posts ─────────────────────────────────────────────────────────────────
 
 export const posts = {
-  create: (content: string) =>
-    req<Pick<Post, 'id' | 'redactedContent' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content }),
+  /** `category`: the type of threat (lib/categories.ts), or null for none. */
+  create: (content: string, category: string | null) =>
+    req<Pick<Post, 'id' | 'redactedContent' | 'category' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content, category }),
   /** What the redacted version of this text would be. Nothing is saved. */
   preview: (content: string) => req<{ redactedContent: string }>('POST', '/posts/preview', { content }),
   /** The signed-in user's own posts, newest first. */
@@ -478,12 +484,16 @@ export const push = {
 
 // ── Weightage ─────────────────────────────────────────────────────────────
 
+function categoryParam(category: string): string {
+  return category ? `&category=${encodeURIComponent(category)}` : '';
+}
+
 export const common = {
-  /** The common page, 30 posts from `offset`. */
-  list: (offset = 0) => req<CommonPage>('GET', `/common?offset=${offset}`),
+  /** The common page, 30 posts from `offset`; only one type of threat when `category` is set. */
+  list: (offset = 0, category = '') => req<CommonPage>('GET', `/common?offset=${offset}${categoryParam(category)}`),
   /** The same for an officer, with the original versions; `token` is their ProMic session. */
-  officerList: async (token: string, offset = 0): Promise<CommonPage> => {
-    const res = await fetch(`${BASE}/common/officer?offset=${offset}`, { headers: { Authorization: `Bearer ${token}` } });
+  officerList: async (token: string, offset = 0, category = ''): Promise<CommonPage> => {
+    const res = await fetch(`${BASE}/common/officer?offset=${offset}${categoryParam(category)}`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(res.status === 401 ? 'Sign in again.' : data.error ?? `Request failed (${res.status})`);
     return data as CommonPage;

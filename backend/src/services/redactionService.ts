@@ -7,16 +7,21 @@
  * with Indian and US formats:
  *  - Email addresses, URLs, UPI ids
  *  - Phone numbers
- *  - ID numbers: Aadhaar, PAN, GSTIN, IFSC, SSN, vehicle registrations
+ *  - ID numbers: Aadhaar, PAN, GSTIN, IFSC, SSN, vehicle registrations (BH series too)
+ *  - Official numbers: badge and buckle numbers, police ranks with a number ("PC 1234"), FIR,
+ *    CSR, case, complaint and employee numbers
  *  - Dates
  *  - Street and door addresses, PIN and ZIP codes
+ *  - Named places: police stations, government offices, courts, hospitals, schools, markets,
+ *    bus stands, temples, junctions … ("Adyar Police Station" → "[PLACE REDACTED] Police Station")
  *  - Company names that end in a word such as "Ltd" or "Technologies"
- *  - Names: after a title (Mr., Dr., Shri …), after a role word ("my manager Ravi"), with
- *    initials ("S. Kumar"), and any run of capitalised words
+ *  - Names: after a title (Mr., Dr., Shri …), after a role word ("my manager Ravi", "our
+ *    neighbour Suresh", "constable Murugan"), with initials ("S. Kumar"), and any run of
+ *    capitalised words
  *
  * It cannot recognise a name written in lower case, a single name with nothing around it to
- * mark it as one, or anything in another script. Place names are capitalised words and are
- * redacted with the names, on purpose: a town can identify a workplace.
+ * mark it as one, or anything in another script. Other place names are capitalised words and
+ * are redacted with the names, on purpose: a town or a street can identify a person.
  */
 
 interface RedactionRule {
@@ -33,11 +38,24 @@ const TITLES = 'Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Shri|Smt|Sri|Kum|Kumari|Thiru|Tmt|Selv
 const ROLES =
   'manager|supervisor|boss|director|colleague|coworker|co-worker|owner|founder|foreman|'
   + 'contractor|officer|inspector|executive|engineer|accountant|teacher|principal|professor|'
-  + 'doctor|nurse|guard|driver|lead|head|partner|named|called';
+  + 'doctor|nurse|guard|driver|lead|head|partner|named|called|'
+  // Outside work: neighbours, the police and officials, family, and people on the street.
+  + 'neighbour|neighbor|landlord|landlady|tenant|constable|sub-inspector|policeman|cop|clerk|'
+  + 'tahsildar|collector|councillor|councilor|warden|husband|wife|father|mother|brother|sister|'
+  + 'uncle|aunt|cousin|relative|son|daughter|stepfather|stepmother|father-in-law|mother-in-law|'
+  + 'brother-in-law|sister-in-law|boyfriend|girlfriend|friend|classmate|senior|junior|tutor|'
+  + 'coach|conductor|watchman|shopkeeper|priest|man|woman|boy|girl';
 const COMPANY_ENDINGS =
   'Pvt\\.?\\s+Ltd\\.?|Private\\s+Limited|Limited|Ltd\\.?|LLP|LLC|Inc\\.?|Corp\\.?|Corporation|'
   + 'Technologies|Technology|Solutions|Industries|Enterprises|Services|Systems|Consultancy|'
   + 'Consulting|Associates|Holdings|Group|Company|Mills|Textiles|Motors|Pharma|Bank';
+// Words that end the name of a place: "Adyar Police Station", "Gandhi Market", "Anna Bus Stand".
+const PLACE_WORDS =
+  'Police\\s+Station|Police\\s+Outpost|Police\\s+Booth|Station|Thana|Chowki|Taluk\\s+Office|'
+  + 'Tahsildar\\s+Office|Collectorate|Municipality|Municipal\\s+Office|Panchayat\\s+Office|Panchayat|'
+  + 'Ward\\s+Office|Court|Hospital|Clinic|School|College|University|Hostel|Market|Bus\\s+Stand|'
+  + 'Bus\\s+Stop|Bus\\s+Depot|Temple|Church|Mosque|Masjid|Park|Beach|Junction|Signal|Circle|'
+  + 'Bridge|Flyover|Mall|Theatre|Theater|Stadium|Lake';
 const MONTHS =
   'Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|'
   + 'Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?';
@@ -77,6 +95,29 @@ const RULES: RedactionRule[] = [
     label: 'vehicle_registration',
     pattern: /\b[A-Z]{2}[\s-]?\d{1,2}[\s-]?[A-Z]{1,3}[\s-]?\d{4}\b/g,
     replacement: '[VEHICLE REDACTED]',
+  },
+  {
+    label: 'vehicle_registration_bh',
+    pattern: /\b\d{2}[\s-]?BH[\s-]?\d{4}[\s-]?[A-Z]{1,2}\b/g,
+    replacement: '[VEHICLE REDACTED]',
+  },
+  {
+    // Numbers that identify an officer or a case. Before the door number rule, which would
+    // otherwise take "No. 45" in "case No. 45" for an address.
+    label: 'official_number',
+    pattern: /\b((?:badge|buckle|belt|FIR|CSR|employee\s+id|staff\s+id|ID\s+card)\s*(?:no\.?|number|#)?\s*[:#.]?)\s*[A-Z]{0,3}[-\s]?\d[\dA-Z\/-]*/gi,
+    replacement: '$1[ID REDACTED]',
+  },
+  {
+    label: 'numbered_record',
+    pattern: /\b((?:complaint|case|token|service|employee|staff|roll|register|registration|ID)\s*(?:no\.?|number|#)\s*[:#.]?)\s*[A-Z]{0,3}[-\s]?\d[\dA-Z\/-]*/gi,
+    replacement: '$1[ID REDACTED]',
+  },
+  {
+    // Police ranks with a number: "PC 1234", "HC No. 567".
+    label: 'police_number',
+    pattern: /\b((?:PC|HC|ASI|SI|SHO)(?:\s*No\.?)?)\s*\d{2,6}\b/g,
+    replacement: '$1 [ID REDACTED]',
   },
   {
     label: 'aadhaar',
@@ -125,8 +166,8 @@ const RULES: RedactionRule[] = [
   },
   {
     label: 'door_number',
-    // A home or shop number. Not "Unit 2" or "Room 5": in a workplace report those name a part of
-    // the workplace, and hiding them made posts hard to follow without protecting anyone.
+    // A home or shop number. Not "Unit 2" or "Room 5": those name a part of a building, and
+    // hiding them made posts hard to follow without protecting anyone.
     pattern: /\b(?:Door|House|Flat|Plot|Apartment|Apt|Shop|H\.?\s?No|D\.?\s?No|No)\.?(?:\s+No\.?)?\s*[:#]?\s*\d+[A-Za-z]?(?:[\/-]\d+[A-Za-z]?)?/gi,
     replacement: '[ADDRESS REDACTED]',
   },
@@ -172,6 +213,9 @@ const RULES: RedactionRule[] = [
 const ROLE_WORDS = ROLES.split('|').map((r) => `[${r[0].toUpperCase()}${r[0]}]${r.slice(1)}`).join('|');
 const ROLE_NAME = new RegExp(`\\b(${ROLE_WORDS}|CEO|CTO|CFO|MD|HR)(\\s+)([A-Z][a-z]+)\\b`, 'g');
 
+// One to four capitalised words ending in a word that places end in: "Adyar Police Station".
+const PLACE = new RegExp(`\\b((?:[A-Z][A-Za-z.'-]*\\s+){1,4})(${PLACE_WORDS})\\b`, 'g');
+
 // One to four capitalised words ending in a word that companies end in: "Sunrise Textiles",
 // "Acme Solutions Pvt Ltd".
 const COMPANY = new RegExp(`\\b((?:[A-Z][A-Za-z0-9&.'-]*\\s+){1,4})(?:${COMPANY_ENDINGS})(?![A-Za-z])`, 'g');
@@ -192,9 +236,31 @@ const NOT_NAMES = new Set(
     + 'Human Resources Manager Supervisor Director Boss Owner Founder Department Team Lead Head '
     + 'Office Company Management Staff Employee Employees Worker Workers Colleague Colleagues '
     + 'Police Station Court Government Ministry Union Committee Board Branch Factory Warehouse '
-    + 'Night Day Shift Morning Evening Internal Complaints Labour Labor Commissioner India Indian'
+    + 'Night Day Shift Morning Evening Internal Complaints Labour Labor Commissioner India Indian '
+    // Officials, family and neighbours, and the words of a place's name (PLACE_WORDS)
+    + 'Constable Inspector Officer Sub Clerk Collector Councillor Warden Neighbour Neighbor '
+    + 'Landlord Landlady Husband Wife Father Mother Brother Sister Uncle Aunt Cousin Son Daughter '
+    + 'Friend Teacher Principal Doctor Driver Conductor Watchman Shopkeeper Women Woman Men Man '
+    + 'Outpost Booth Thana Chowki Taluk Tahsildar Collectorate Municipality Municipal Corporation '
+    + 'Panchayat Ward Hospital Clinic School College University Hostel Market Bus Stand Stop Depot '
+    + 'Railway Metro Temple Church Mosque Masjid Park Beach Junction Signal Circle Bridge Flyover '
+    + 'Mall Theatre Theater Stadium Lake Public Private Primary Higher Secondary Old New Main'
   ).split(' '),
 );
+
+function redactPlaces(text: string): string {
+  return text.replace(PLACE, (match, lead: string, place: string) => {
+    const words = lead.trim().split(/\s+/);
+    // "The Police Station", "Government Hospital": ordinary words, nothing to hide.
+    if (words.every((w) => NOT_NAMES.has(w))) return match;
+    // Words before the name ("Near", "At") and after it ("Government", "Railway") stay.
+    let start = 0;
+    while (start < words.length && NOT_NAMES.has(words[start])) start++;
+    let end = words.length;
+    while (end > start && NOT_NAMES.has(words[end - 1])) end--;
+    return [...words.slice(0, start), '[PLACE REDACTED]', ...words.slice(end), place].join(' ');
+  });
+}
 
 function redactCompanies(text: string): string {
   return text.replace(COMPANY, (match, lead: string) => {
@@ -239,6 +305,7 @@ export function redactContent(content: string): string {
   for (const rule of RULES) {
     result = result.replace(rule.pattern, rule.replacement);
   }
+  result = redactPlaces(result);
   result = redactCompanies(result);
   // Runs first: "Manager Ravi Kumar" must go as a whole, not leave "Kumar" behind.
   result = redactCapitalisedRuns(result);

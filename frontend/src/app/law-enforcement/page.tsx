@@ -366,7 +366,7 @@ export default function LawEnforcementPage() {
 
   const sessionToken = session?.token;
   const loadCommon = useCallback(
-    (offset: number) => common.officerList(sessionToken ?? '', offset),
+    (offset: number, category: string) => common.officerList(sessionToken ?? '', offset, category),
     [sessionToken],
   );
 

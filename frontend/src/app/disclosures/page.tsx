@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { backedBy } from '@/lib/weight';
 import { posts as postsApi, type MyPost } from '@/lib/api';
 import { getSession } from '@/lib/session';
+import CategoryTag from '@/components/CategoryTag';
 
 /** The signed-in user's own disclosures: the only way back to them, as they sit in other groups. */
 export default function DisclosuresPage() {
@@ -63,6 +64,7 @@ export default function DisclosuresPage() {
             href={`/post/${post.id}/map`}
             className="block p-4 bg-navy-800 border border-gray-800 rounded-xl hover:border-accent-teal/40 transition-colors no-underline"
           >
+            <CategoryTag category={post.category} className="mb-2" />
             <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">{post.redactedContent}</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-gray-500">
               {post.hiddenAt && <span className="text-accent-red">Hidden by an admin</span>}

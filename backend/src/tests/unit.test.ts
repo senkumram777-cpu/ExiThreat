@@ -76,6 +76,26 @@ test('redaction: ordinary words are left alone', () => {
   assert.equal(redactContent('The Manager Ravi Kumar refused'), 'The Manager [NAME REDACTED] refused');
 });
 
+test('redaction: threats outside work', () => {
+  // Street: a vehicle, including the BH series.
+  hides('He followed me on a bike KA 05 MN 4321 and a car 22 BH 4567 AB', 'KA 05 MN 4321', '22 BH 4567 AB');
+  // Police and officials: badge, rank and case numbers, the station.
+  hides('Constable Murugan, badge no. 4521, and PC 1234 refused my FIR at Adyar Police Station',
+    'Murugan', '4521', '1234', 'Adyar');
+  hides('My complaint No. 345/2025 and CSR 778 were never registered', '345/2025', '778');
+  assert.equal(redactContent('They took me to Adyar Police Station at night.'),
+    'They took me to [PLACE REDACTED] Police Station at night.');
+  // Neighbourhood and family.
+  hides('Our neighbour Suresh and his brother-in-law Ganesh threaten us', 'Suresh', 'Ganesh');
+  hides('my husband Karthik beats me near Lakshmi Temple', 'Karthik', 'Lakshmi');
+  hides('It happens every evening at Anna Nagar Bus Stand and Gandhi Market', 'Anna', 'Gandhi');
+  // Places with no name in them stay readable.
+  const same = (text: string) => assert.equal(redactContent(text), text);
+  same('The Government Hospital refused to record my injuries.');
+  same('The police station sent me away twice.');
+  same('My Husband shouted at me in front of the Bus Stand.');
+});
+
 test('redaction: labels are not redacted a second time', () => {
   const once = redactContent('Mr. Ravi Kumar, 9876543210, ravi@example.com');
   assert.equal(redactContent(once), once);

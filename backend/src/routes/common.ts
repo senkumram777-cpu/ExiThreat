@@ -5,6 +5,7 @@ import { requireAuth, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { officerFor } from '../services/officerAuth';
 import { notBlockedBy } from './moderation';
+import { isCategory } from '../services/categories';
 
 const router = Router();
 
@@ -15,12 +16,14 @@ export const ON_COMMON_PAGE = { listedAt: { not: null }, hiddenAt: null, unliste
 /**
  * The common page: every post that has reached 20% of the eligible groups (services/spread.ts;
  * an admin can change the share), fastest spreading first, less any an admin hid or unlisted. Each is tagged with its author's pseudonym, never the username.
- * Members get the redacted version only; officers get the original as well.
+ * Members get the redacted version only; officers get the original as well. `?category=` keeps
+ * only posts of that type of threat (services/categories.ts); anything else lists them all.
  */
 async function listed(req: Request, withOriginal: boolean, readerId?: string) {
   const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
   // A member does not see posts by members they have blocked (routes/moderation.ts).
-  const where: Prisma.PostWhereInput = readerId ? { ...ON_COMMON_PAGE, oc: notBlockedBy(readerId) } : ON_COMMON_PAGE;
+  const where: Prisma.PostWhereInput = readerId ? { ...ON_COMMON_PAGE, oc: notBlockedBy(readerId) } : { ...ON_COMMON_PAGE };
+  if (isCategory(req.query.category)) where.category = req.query.category;
   const [posts, total] = await Promise.all([
     prisma.post.findMany({
       where,
@@ -31,6 +34,7 @@ async function listed(req: Request, withOriginal: boolean, readerId?: string) {
         id: true,
         redactedContent: true,
         originalContent: withOriginal,
+        category: true,
         createdAt: true,
         listedAt: true,
         reachedGroups: true,

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posts as postsApi } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
+import { CATEGORIES, CATEGORY_KEYS } from '@/lib/categories';
 
 const MIN_LENGTH = 20;
 const MAX_LENGTH = 5000;
@@ -12,6 +13,7 @@ export default function NewPostPage() {
   const rules = useRules();
   const router = useRouter();
   const [content, setContent] = useState('');
+  const [category, setCategory] = useState('');
   // The redacted version of exactly the text in the box; cleared as soon as the text changes.
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export default function NewPostPage() {
     setBusy(true);
     setError(null);
     try {
-      const post = await postsApi.create(content.trim());
+      const post = await postsApi.create(content.trim(), category || null);
       router.push(`/post/${post.id}`);
     } catch (err) {
       setError((err as Error).message);
@@ -60,6 +62,20 @@ export default function NewPostPage() {
       </p>
 
       <form onSubmit={handlePreview} className="flex flex-col gap-4">
+        <div>
+          <label htmlFor="category" className="block text-xs font-mono text-gray-400 mb-1">
+            Type of threat <span className="text-gray-600">(optional)</span>
+          </label>
+          <select
+            id="category"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full bg-navy-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent-red"
+          >
+            <option value="">Choose one…</option>
+            {CATEGORY_KEYS.map((key) => <option key={key} value={key}>{CATEGORIES[key]}</option>)}
+          </select>
+        </div>
         <div className="relative">
           <label htmlFor="disclosure" className="sr-only">Your disclosure</label>
           <textarea
@@ -69,7 +85,7 @@ export default function NewPostPage() {
               setContent(e.target.value);
               setPreview(null);
             }}
-            placeholder="Describe the workplace abuse, threat, or grievance…"
+            placeholder="Describe what happened: the abuse or threat, where and by whom…"
             rows={10}
             maxLength={MAX_LENGTH}
             className="w-full bg-navy-800 border border-gray-700 rounded-xl px-4 py-3 font-mono text-sm text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:border-accent-red leading-relaxed"

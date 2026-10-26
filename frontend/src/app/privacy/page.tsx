@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = { title: 'Privacy Policy · ExiThreat' };
 
 const CONTACT = 'senkumram777@gmail.com';
-const UPDATED = '23 October 2026';
+const UPDATED = '26 October 2026';
 
 // The ExiThreat website and Android app share this policy (Play Store listing → Privacy policy).
 // Keep it in step with what the backend stores: backend/prisma/schema.prisma.
@@ -17,7 +17,8 @@ export default function PrivacyPage() {
       </header>
 
       <p>
-        ExiThreat is a place to disclose abuse and unfair practices at work without being named. This policy
+        ExiThreat is a place to disclose abuse and threats of any kind without being named: at work, on the
+        street, in a neighbourhood, by a police or government official, at home or online. This policy
         explains what the ExiThreat website (exithreat.iyugam.com) and the ExiThreat Android app collect, why,
         who can see it, and how to delete it. ExiThreat is for adults: you must be 18 or older to use it.
       </p>

@@ -10,6 +10,7 @@ import { recalculateGroupWeight } from '../services/groupWeightService';
 import { groupMapFor } from '../services/groupMapService';
 import { recalculateSpread } from '../services/spreadService';
 import { LIMITS, readText } from '../services/validation';
+import { readCategory } from '../services/categories';
 import { notBlockedBy } from './moderation';
 
 const router = Router();
@@ -46,6 +47,11 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
     res.status(400).json({ error: content.error });
     return;
   }
+  const category = readCategory(req.body?.category);
+  if (!category.ok) {
+    res.status(400).json({ error: category.error });
+    return;
+  }
 
   // Assign to a random group that has enough members and that the author is not in
   const groupId = await pickGroupForPost(userId);
@@ -64,12 +70,14 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
     data: {
       originalContent,
       redactedContent,
+      category: category.category,
       ocUserId: userId,
       placements: { create: { groupId } },
     },
     select: {
       id: true,
       redactedContent: true,
+      category: true,
       totalWeight: true,
       createdAt: true,
     },
@@ -98,6 +106,7 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
     select: {
       id: true,
       redactedContent: true,
+      category: true,
       totalWeight: true,
       createdAt: true,
       lastManualPushAt: true,
@@ -210,6 +219,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
     select: {
       id: true,
       redactedContent: true,
+      category: true,
       totalWeight: true,
       createdAt: true,
       ocUserId: true,

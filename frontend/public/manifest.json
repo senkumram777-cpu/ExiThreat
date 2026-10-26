@@ -2,7 +2,7 @@
   "id": "/",
   "name": "ExiThreat",
   "short_name": "ExiThreat",
-  "description": "Secure workplace disclosure platform",
+  "description": "Spotlight the abusers behind any threat to you, wherever it happened",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

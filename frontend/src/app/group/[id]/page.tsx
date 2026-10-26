@@ -7,6 +7,7 @@ import { backedBy } from '@/lib/weight';
 import { groups as groupsApi, type GroupDetail } from '@/lib/api';
 import GroupChat from '@/components/GroupChat';
 import ReportBlock from '@/components/ReportBlock';
+import CategoryTag from '@/components/CategoryTag';
 
 export default function GroupPage() {
   const { id } = useParams<{ id: string }>();
@@ -87,6 +88,7 @@ export default function GroupPage() {
                 href={`/post/${post.id}`}
                 className="block p-4 bg-navy-800 border border-gray-800 rounded-xl hover:border-accent-teal/40 transition-colors no-underline"
               >
+                <CategoryTag category={post.category} className="mb-2" />
                 <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">
                   {post.redactedContent}
                 </p>

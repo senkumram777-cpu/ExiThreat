@@ -5,7 +5,7 @@ import AgreeToTerms from '@/components/AgreeToTerms';
 export const metadata: Metadata = { title: 'Terms of Use · ExiThreat' };
 
 const CONTACT = 'senkumram777@gmail.com';
-const UPDATED = '23 October 2026';
+const UPDATED = '26 October 2026';
 
 // The ExiThreat website and Android app share these terms; members agree to them when they sign
 // up (older accounts before they next write anything: backend middleware/auth.ts, requireTerms).
@@ -20,7 +20,8 @@ export default function TermsPage() {
       <AgreeToTerms />
 
       <p>
-        ExiThreat is a place to disclose abuse and unfair practices at work without being named, and for other
+        ExiThreat is a place to disclose abuse and threats of any kind without being named (at work, on the
+        street, in a neighbourhood, by a police or government official, at home or online), and for other
         members to read, comment on and pass those disclosures on. By creating an account or using the ExiThreat
         website (exithreat.iyugam.com) or the ExiThreat Android app, you agree to these terms. If you do not agree,
         do not use ExiThreat.

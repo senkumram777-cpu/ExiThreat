@@ -10,6 +10,7 @@ import PushButton from '@/components/PushButton';
 import CommentSection from '@/components/CommentSection';
 import ReportBlock from '@/components/ReportBlock';
 import { useRules } from '@/lib/rules';
+import CategoryTag from '@/components/CategoryTag';
 
 // 'first-look-ready': the look is still available but not started; it starts (and the server
 // records it) only when the reader taps "Read now", so opening a post by mistake costs nothing.
@@ -188,8 +189,9 @@ export default function PostPage() {
         </div>
       ) : (
         <div className="p-4 bg-navy-800 rounded-xl border border-gray-800">
-          <div className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">
-            Redacted Version
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="text-xs font-mono text-gray-600 uppercase tracking-widest">Redacted Version</div>
+            <CategoryTag category={post.category} />
           </div>
           {firstLookNote && (
             <div className="text-xs font-mono text-yellow-600 mb-3">{firstLookNote}</div>

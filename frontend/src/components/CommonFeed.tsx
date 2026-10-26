@@ -5,12 +5,15 @@ import type { CommonPage, CommonPost } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
 import { groupsPerDay } from '@/lib/weight';
 import ReportBlock from './ReportBlock';
+import CategoryTag from './CategoryTag';
+import { CATEGORIES, CATEGORY_KEYS } from '@/lib/categories';
 
 /**
  * The common page's list: posts that have reached the listing share of the groups (20% unless an
  * admin changed it), fastest spreading first,
  * each tagged with its author's pseudonym. Members get the redacted version; officers
- * (`officer`) the original as well. `load` fetches one page from an offset.
+ * (`officer`) the original as well. `load` fetches one page from an offset, of one type of threat
+ * when one is chosen above the list.
  */
 
 function duration(ms: number): string {
@@ -30,6 +33,7 @@ function PostCard({ post, officer, listShare, onBlocked }: {
       <div className="flex items-center gap-2 text-xs font-mono">
         <span className="text-accent-teal font-bold">#{post.rank}</span>
         <span className="text-gray-300">{post.author}</span>
+        <CategoryTag category={post.category} />
         <span className="text-gray-600 ml-auto">{new Date(post.createdAt).toLocaleDateString()}</span>
         {/* Members only: officers read the page through ProMic, not as members. */}
         {!officer && <ReportBlock targetType="post" targetId={post.id} author={post.author} onBlocked={onBlocked} />}
@@ -75,7 +79,7 @@ export default function CommonFeed({
   officer = false,
   onUnauthorized,
 }: {
-  load: (offset: number) => Promise<CommonPage>;
+  load: (offset: number, category: string) => Promise<CommonPage>;
   officer?: boolean;
   onUnauthorized?: () => void;
 }) {
@@ -84,10 +88,11 @@ export default function CommonFeed({
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [category, setCategory] = useState('');
 
   const fetchFrom = useCallback(async (offset: number) => {
     try {
-      const page = await load(offset);
+      const page = await load(offset, category);
       setTotal(page.total);
       setPosts((prev) => (offset === 0 || !prev ? page.posts : [...prev, ...page.posts]));
       setError(null);
@@ -96,30 +101,53 @@ export default function CommonFeed({
       if (/sign in again|401/i.test(message) && onUnauthorized) onUnauthorized();
       else setError(message);
     }
-  }, [load, onUnauthorized]);
+  }, [load, onUnauthorized, category]);
 
   useEffect(() => {
+    setPosts(null);
     fetchFrom(0);
   }, [fetchFrom]);
 
-  if (error && !posts) return <div className="text-xs font-mono text-accent-red">{error}</div>;
+  const filter = (
+    <div className="flex items-center gap-2">
+      <label htmlFor="common-category" className="text-xs font-mono text-gray-500 shrink-0">Type of threat</label>
+      <select
+        id="common-category"
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        className="min-w-0 flex-1 bg-navy-800 border border-gray-700 rounded-lg px-2 py-1.5 font-mono text-xs text-gray-200 focus:outline-none focus:border-accent-teal"
+      >
+        <option value="">All</option>
+        {CATEGORY_KEYS.map((key) => <option key={key} value={key}>{CATEGORIES[key]}</option>)}
+      </select>
+    </div>
+  );
+
+  if (error && !posts) return <div className="flex flex-col gap-4">{filter}<div className="text-xs font-mono text-accent-red">{error}</div></div>;
   if (!posts) {
     return (
       <div className="flex flex-col gap-3">
+        {filter}
         {[0, 1, 2].map((i) => <div key={i} className="h-32 bg-navy-800 rounded-xl animate-pulse" />)}
       </div>
     );
   }
   if (posts.length === 0) {
     return (
-      <p className="text-sm font-mono text-gray-500 text-center py-8">
-        No post has reached {pct(rules.listShare)} of the groups yet.
-      </p>
+      <div className="flex flex-col gap-4">
+        {filter}
+        <p className="text-sm font-mono text-gray-500 text-center py-8">
+          {category
+            ? `No post of this type has reached ${pct(rules.listShare)} of the groups yet.`
+            : `No post has reached ${pct(rules.listShare)} of the groups yet.`}
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {filter}
       {posts.map((post) => (
         <PostCard
           key={post.id}
