@@ -1,0 +1,32 @@
+# AI redaction for the ExiThreat API (app.py). Private: it has no public address and is reached
+# only by exithreat-api at http://exithreat-redactor.flycast (REDACTOR_URL in ../backend/fly.toml).
+# First deploy: fly apps create exithreat-redactor; fly ips allocate-v6 --private;
+#               fly deploy --no-public-ips
+# Turned off for now: its machine is stopped with autostart off, and the API has no REDACTOR_URL.
+# To turn it back on: fly machine update <id> --autostart=true, then set REDACTOR_URL in
+# ../backend/fly.toml and deploy the API.
+# It sleeps when idle: Fly stops the machine a few minutes after the last request and starts it
+# again on the next one (about 10–30 s), so it costs little while nobody is posting.
+
+app = 'exithreat-redactor'
+primary_region = 'sin'
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = false
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = 'GET'
+    path = '/health'
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '60s'
+
+[[vm]]
+  size = 'shared-cpu-2x'
+  memory = '4gb'

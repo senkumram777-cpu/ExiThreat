@@ -13,6 +13,10 @@ primary_region = 'sin'
   FRONTEND_ORIGIN = 'https://exithreat.iyugam.com,https://exithreat-admin.iyugam.com,https://exithreat.fly.dev'
   PROMIC_DATABASE_URL = 'https://promic-c5567-default-rtdb.firebaseio.com'
   PROMIC_STORAGE_BUCKET = 'promic-c5567.firebasestorage.app'
+  # The AI redactor (../redactor), on Fly's private network only; it sleeps when idle.
+  # Turned off for now (its machine is stopped): without REDACTOR_URL only the patterns run.
+  # To turn it on: uncomment, start the machine with autostart, and deploy.
+  # REDACTOR_URL = 'http://exithreat-redactor.flycast'
 
 [http_service]
   internal_port = 4000

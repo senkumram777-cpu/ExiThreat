@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { redactContent } from '../services/redactionService';
+import { applyEntities } from '../services/aiRedaction';
 import { generatePaperStrip, wrapText } from '../services/imageService';
 import { weightOf } from '../services/weight';
 import { LIMITS, passwordProblem, readText, USERNAME_PATTERN } from '../services/validation';
@@ -94,6 +95,32 @@ test('redaction: threats outside work', () => {
   same('The Government Hospital refused to record my injuries.');
   same('The police station sent me away twice.');
   same('My Husband shouted at me in front of the Bus Stand.');
+});
+
+test('AI redaction: its findings are hidden, ordinary words and unknown labels are not', () => {
+  const text = 'my neighbour ravi waits near the old well and the police station did nothing';
+  const at = (s: string) => text.indexOf(s);
+  const out = applyEntities(text, [
+    { start: at('ravi'), end: at('ravi') + 4, label: 'person' },
+    { start: at('the old well'), end: at('the old well') + 12, label: 'landmark' },
+    { start: at('the police station'), end: at('the police station') + 18, label: 'police station' },
+    { start: 0, end: 2, label: 'something else' },
+    { start: 5, end: 999, label: 'person' },
+  ]);
+  // A person in lower case is hidden; a place in lower case is an ordinary noun.
+  assert.equal(out, 'my neighbour [NAME REDACTED] waits near the old well and the police station did nothing');
+  // Role and family words at the edges stay readable, and so do punctuation marks.
+  const clerk = 'the clerk Selvam, and my mother-in-law, near Kodambakkam.';
+  assert.equal(applyEntities(clerk, [
+    { start: 0, end: 17, label: 'person' },
+    { start: clerk.indexOf('my mother'), end: clerk.indexOf('my mother') + 16, label: 'person' },
+    { start: clerk.indexOf('Kodambakkam'), end: clerk.length, label: 'location' },
+  ]), 'the clerk [NAME REDACTED], and my mother-in-law, near [PLACE REDACTED].');
+  // Overlapping findings become one label.
+  assert.equal(applyEntities('Ravi Kumar left', [
+    { start: 0, end: 10, label: 'person' }, { start: 5, end: 10, label: 'location' },
+  ]), '[NAME REDACTED] left');
+  assert.equal(applyEntities('nothing found', []), 'nothing found');
 });
 
 test('redaction: labels are not redacted a second time', () => {

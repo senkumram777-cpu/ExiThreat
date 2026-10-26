@@ -95,6 +95,17 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    URLs, dates, ID numbers (Indian and US formats), vehicle numbers, badge, FIR and case numbers,
    and named places such as police stations, offices, markets and temples ("[PLACE REDACTED]
    Police Station") with labels such as `[NAME REDACTED]`.
+   An AI model then adds what the patterns miss (names in lower case, a name on its own, places
+   without a giveaway word, such as "Kodambakkam"), in English text including Indian names in
+   English letters; it finds next to nothing in Tamil, Hindi or other scripts. GLiNER (`urchade/gliner_multi-v2.1`) in the
+   `redactor/` service, a separate Fly app (`exithreat-redactor`) with no public address that the
+   API reaches at `REDACTOR_URL` (`backend/src/services/aiRedaction.ts`). Everything either one
+   finds is hidden. The redactor stops when idle and starts on the next request (10–30 s);
+   opening the New Disclosure page wakes it (`POST /posts/warm`). If it cannot answer, the
+   preview uses the patterns alone and says so, and a post previewed with the AI is not saved
+   without it: the author previews again.
+   **Currently turned off**: `REDACTOR_URL` is commented out in `backend/fly.toml` and the
+   redactor's machine is stopped with autostart off, so only the patterns run.
    The author must look at that redacted version before submitting ("Preview redaction"), and
    finds their posts again under "Mine". The server places the post in a random group
    that has at least 5 members and that the author is not in. If there is no such group yet,
@@ -235,7 +246,7 @@ answered 403 with `code: "TERMS_REQUIRED"` when it posts, comments or chats.
 | `GET /groups`, `GET /groups/:id`, `POST /groups/:id/heartbeat` | The user's own group and activity |
 | `GET /groups/:id/chat`, `POST /groups/:id/chat` | Group chat |
 | `POST /posts`, `GET /posts/:id`, `GET /posts/:id/strip`, `POST /posts/:id/strip/done` | Create a post, read it, the one-time image strip (a PNG in base64, drawn in rows, with each row's width), close the first look |
-| `POST /posts/preview`, `GET /posts/mine` | The redacted version of a text before it is posted; the caller's own posts |
+| `POST /posts/preview`, `POST /posts/warm`, `GET /posts/mine` | The redacted version of a text before it is posted, with `aiChecked`; wake the AI redactor; the caller's own posts |
 | `GET /posts/:id/map` | Author only: every group by name and weight, which it covered in this round, passed through and is in now, the path between them, and the round |
 | `GET /common?offset=&category=` | The common page, 30 at a time: redacted versions, by pseudonym (members); `category` keeps one type of threat |
 | `GET /common/officer?offset=&category=` | The same with the original versions, for an officer's ProMic session token |

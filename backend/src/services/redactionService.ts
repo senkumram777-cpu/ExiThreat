@@ -262,6 +262,24 @@ function redactPlaces(text: string): string {
   });
 }
 
+const ROLE_SET = new Set(ROLES.toLowerCase().split('|').flatMap((r) => r.split('-')));
+
+/**
+ * Whether a word is an ordinary one, not part of a name: a NOT_NAMES word or a role word ("clerk",
+ * "neighbour", "mother-in-law"), in any case. Used to trim the AI's findings (aiRedaction.ts).
+ */
+export function isOrdinaryWord(word: string): boolean {
+  const letters = word.replace(/[^A-Za-z]/g, '');
+  if (!letters) return false;
+  return NOT_NAMES.has(letters[0].toUpperCase() + letters.slice(1).toLowerCase()) || ROLE_SET.has(letters.toLowerCase());
+}
+
+/** Whether a phrase is only ordinary words: "the police station", "my mother-in-law". */
+export function isOrdinaryPhrase(phrase: string): boolean {
+  const words = phrase.split(/[^A-Za-z]+/).filter(Boolean);
+  return words.length > 0 && words.every(isOrdinaryWord);
+}
+
 function redactCompanies(text: string): string {
   return text.replace(COMPANY, (match, lead: string) => {
     // "The Company", "Our Group": ordinary words, nothing to hide.

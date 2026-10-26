@@ -430,11 +430,16 @@ export const auth = {
 // ── Posts ─────────────────────────────────────────────────────────────────
 
 export const posts = {
-  /** `category`: the type of threat (lib/categories.ts), or null for none. */
-  create: (content: string, category: string | null) =>
-    req<Pick<Post, 'id' | 'redactedContent' | 'category' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content, category }),
-  /** What the redacted version of this text would be. Nothing is saved. */
-  preview: (content: string) => req<{ redactedContent: string }>('POST', '/posts/preview', { content }),
+  /**
+   * `category`: the type of threat (lib/categories.ts), or null for none. `aiChecked`: whether
+   * the preview the author approved had the AI check; one that had it is not saved without it.
+   */
+  create: (content: string, category: string | null, aiChecked: boolean) =>
+    req<Pick<Post, 'id' | 'redactedContent' | 'category' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content, category, aiChecked }),
+  /** What the redacted version of this text would be, and whether the AI checked it too. Nothing is saved. */
+  preview: (content: string) => req<{ redactedContent: string; aiChecked: boolean }>('POST', '/posts/preview', { content }),
+  /** Wakes the AI redactor while the author writes, so the preview does not wait for it. */
+  warm: () => req<{ ok: boolean }>('POST', '/posts/warm').catch(() => undefined),
   /** The signed-in user's own posts, newest first. */
   mine: () => req<MyPost[]>('GET', '/posts/mine'),
   get: (id: string) => req<Post>('GET', `/posts/${id}`),

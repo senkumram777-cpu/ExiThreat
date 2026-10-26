@@ -3,7 +3,7 @@ import { prisma } from '../index';
 import { requireAuth, requireTerms, AuthRequest } from '../middleware/auth';
 import { handle } from '../middleware/handle';
 import { generatePaperStrip } from '../services/imageService';
-import { redactContent } from '../services/redactionService';
+import { aiRedactionEnabled, redactWithAi, warmRedactor } from '../services/aiRedaction';
 import { postAccess, postAccessById, readerGroup, NOT_IN_GROUP } from '../services/accessService';
 import { pickGroupForPost } from '../services/groupService';
 import { recalculateGroupWeight } from '../services/groupWeightService';
@@ -64,7 +64,18 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
   }
 
   const originalContent = content.text;
-  const redactedContent = redactContent(originalContent);
+  // The author approved the preview; what is saved must hide at least as much. A preview made
+  // with the AI that cannot be repeated now is not saved with the patterns alone: the author
+  // previews again. One the author saw without the AI (`aiChecked: false`) may be.
+  const { redactedContent, aiChecked } = await redactWithAi(originalContent);
+  if (aiRedactionEnabled() && !aiChecked && req.body?.aiChecked !== false) {
+    res.status(503).json({
+      error: 'The AI redaction check is not available right now. Nothing was saved. '
+        + 'Preview your disclosure again before submitting.',
+      previewAgain: true,
+    });
+    return;
+  }
 
   const post = await prisma.post.create({
     data: {
@@ -89,14 +100,22 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
 }));
 
 // POST /api/posts/preview — what the redacted version of this text would be. Saves nothing.
+// `aiChecked`: whether the AI ran as well as the patterns (services/aiRedaction.ts).
 router.post('/preview', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
   const content = readText(req.body?.content, 'content', LIMITS.postMax, LIMITS.postMin);
   if (!content.ok) {
     res.status(400).json({ error: content.error });
     return;
   }
-  res.json({ redactedContent: redactContent(content.text) });
+  res.json(await redactWithAi(content.text));
 }));
+
+// POST /api/posts/warm — the page for writing a disclosure was opened: wake the AI redactor now,
+// so the preview does not wait for it to start. Answers at once.
+router.post('/warm', requireAuth, (_req: AuthRequest, res: Response): void => {
+  warmRedactor();
+  res.json({ ok: true });
+});
 
 // GET /api/posts/mine — the caller's own posts, newest first
 router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {

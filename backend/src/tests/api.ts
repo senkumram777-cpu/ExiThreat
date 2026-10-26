@@ -11,6 +11,7 @@
 
 import { spawn, spawnSync } from 'child_process';
 import path from 'path';
+import http from 'http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
@@ -51,8 +52,37 @@ const env = {
   LE_OFFICER_TEST: '1',
   // Admins are "test-admin:<name>" instead of a ProMic Firebase sign-in.
   ADMIN_TEST: '1',
+  // A stand-in for the AI redactor (fakeRedactor below).
+  REDACTOR_URL: `http://localhost:${PORT + 1}`,
+  REDACTOR_TIMEOUT_MS: '3000',
   NODE_ENV: 'test',
 };
+
+/**
+ * Stands in for the AI redactor: finds "ravi" in lower case as a person (which the patterns
+ * cannot), and fails for any text containing "redactor-down".
+ */
+function fakeRedactor(): http.Server {
+  return http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      if (req.url === '/health') {
+        res.end('{"ok":true}');
+        return;
+      }
+      const { text = '' } = JSON.parse(body || '{}') as { text?: string };
+      if (text.includes('redactor-down')) {
+        res.statusCode = 500;
+        res.end('{}');
+        return;
+      }
+      const entities = [...text.matchAll(/\bravi\b/g)].map((m) => ({ start: m.index, end: m.index! + 4, label: 'person', score: 0.9 }));
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ entities }));
+    });
+  }).listen(PORT + 1);
+}
 const prisma = new PrismaClient({ datasources: { db: { url: testUrl } } });
 
 let passed = 0;
@@ -295,6 +325,18 @@ async function run(): Promise<void> {
   let r = await call('POST', '/posts/preview', u1.token, { content: text });
   check('preview shows the redacted text and saves nothing',
     r.status === 200 && !/Ravi|Kumar|Sunrise|9876543210/.test(r.data.redactedContent) && (await prisma.post.count()) === 0, r.data);
+  check('the AI ran with the patterns', r.data.aiChecked === true, r.data);
+  r = await call('POST', '/posts/preview', u1.token, { content: 'my neighbour ravi shouts at us every single night.' });
+  check('the AI hides what the patterns miss', r.status === 200 && r.data.aiChecked === true
+    && r.data.redactedContent === 'my neighbour [NAME REDACTED] shouts at us every single night.', r.data);
+  const down = 'My manager Ravi Kumar shouts at us every night (redactor-down).';
+  r = await call('POST', '/posts/preview', u1.token, { content: down });
+  check('without the AI the patterns still run, and the preview says so',
+    r.status === 200 && r.data.aiChecked === false && !/Ravi|Kumar/.test(r.data.redactedContent), r.data);
+  r = await call('POST', '/posts', u1.token, { content: down });
+  check('a post previewed with the AI is not saved without it', r.status === 503 && r.data.previewAgain === true
+    && (await prisma.post.count()) === 0, r.data);
+  check('the warm-up call answers at once', (await call('POST', '/posts/warm', u1.token)).status === 200);
   check('a post over 5,000 characters is refused', (await call('POST', '/posts', u1.token, { content: 'x'.repeat(5001) })).status === 400);
   check('an unknown type of threat is refused',
     (await call('POST', '/posts', u1.token, { content: text, category: 'nonsense' })).status === 400 && (await prisma.post.count()) === 0);
@@ -913,6 +955,7 @@ async function main(): Promise<void> {
   }
   console.log(`Migrations applied to schema ${schema}.`);
 
+  const redactor = fakeRedactor();
   const server = spawn(process.execPath, ['--require', 'ts-node/register/transpile-only', 'src/index.ts'], {
     cwd: ROOT, env, stdio: ['ignore', 'pipe', 'inherit'],
   });
@@ -930,6 +973,7 @@ async function main(): Promise<void> {
     await run();
   } finally {
     server.kill();
+    redactor.close();
     await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     await prisma.$disconnect();
   }

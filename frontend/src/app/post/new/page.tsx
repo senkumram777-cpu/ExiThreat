@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posts as postsApi } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
@@ -16,10 +16,17 @@ export default function NewPostPage() {
   const [category, setCategory] = useState('');
   // The redacted version of exactly the text in the box; cleared as soon as the text changes.
   const [preview, setPreview] = useState<string | null>(null);
+  // Whether that preview had the AI check as well as the patterns.
+  const [aiChecked, setAiChecked] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const tooShort = content.trim().length < MIN_LENGTH;
+
+  // The AI redactor sleeps when idle; start it while the author writes.
+  useEffect(() => {
+    void postsApi.warm();
+  }, []);
 
   const handlePreview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +34,9 @@ export default function NewPostPage() {
     setBusy(true);
     setError(null);
     try {
-      setPreview((await postsApi.preview(content.trim())).redactedContent);
+      const result = await postsApi.preview(content.trim());
+      setPreview(result.redactedContent);
+      setAiChecked(result.aiChecked);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -40,10 +49,13 @@ export default function NewPostPage() {
     setBusy(true);
     setError(null);
     try {
-      const post = await postsApi.create(content.trim(), category || null);
+      const post = await postsApi.create(content.trim(), category || null, aiChecked);
       router.push(`/post/${post.id}`);
     } catch (err) {
-      setError((err as Error).message);
+      const message = (err as Error).message;
+      setError(message);
+      // The AI check could not be repeated: back to the preview step.
+      if (/preview your disclosure again/i.test(message)) setPreview(null);
       setBusy(false);
     }
   };
@@ -109,7 +121,7 @@ export default function NewPostPage() {
             disabled={busy || tooShort}
             className="py-3 border border-accent-teal text-accent-teal rounded-lg font-mono font-bold text-sm disabled:opacity-40 hover:bg-accent-teal/10 transition-colors"
           >
-            {busy ? 'Checking…' : 'Preview redaction'}
+            {busy ? 'Checking… (the AI check can take up to 30 seconds)' : 'Preview redaction'}
           </button>
         ) : (
           <>
@@ -117,6 +129,12 @@ export default function NewPostPage() {
               <div className="text-xs font-mono text-gray-600 uppercase tracking-widest mb-3">
                 Redacted version
               </div>
+              {!aiChecked && (
+                <div className="text-xs font-mono text-yellow-600 mb-3">
+                  The AI check could not run just now, so only the pattern rules were used. Read it
+                  carefully, or preview again in a minute.
+                </div>
+              )}
               <p className="font-mono text-sm text-gray-300 leading-relaxed whitespace-pre-wrap break-words">
                 {preview}
               </p>
@@ -125,9 +143,9 @@ export default function NewPostPage() {
               <span className="text-yellow-500">⚠</span>
               <span>
                 Check that no name, number or place that identifies you or anyone else is still
-                readable above. Redaction works on patterns: it misses names in lower case, a
-                single name on its own, and text that is not in English. Edit your text to
-                remove anything it missed. A disclosure cannot be changed or deleted afterwards.
+                readable above. Redaction uses pattern rules and an AI model, and both can miss
+                things, especially in languages other than English. Edit your text to remove
+                anything they missed. A disclosure cannot be changed or deleted afterwards.
               </span>
             </div>
             <button
