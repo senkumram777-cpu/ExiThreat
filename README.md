@@ -306,8 +306,8 @@ A ProMic Host links their ExiThreat account once:
 2. The user enters it on `/promic`. The backend redeems it from ProMic's database and stores
    the link (`ProMicLink`).
 3. The backend then lists that Host's audio and video backups and decrypts them on request with
-   a ProMic service account (`backend/src/services/promicService.ts`). The browser receives WAV
-   or MP4 and never the key.
+   a ProMic service account (`backend/src/services/promicService.ts`). The browser receives FLAC (older
+   pieces as WAV) or MP4 and never the key.
 
 Without the `PROMIC_*` settings these routes answer 503 and the rest of the app is unaffected.
 
@@ -361,7 +361,7 @@ Shown on the Request Access screen after sign in.
   seconds, with its last known position and the time of it.
 - **Are you OK? and talk-back.** While listening, the officer can ask the user "Are you OK?".
   The user answers in the app with their passcode ("I'm safe" or "Send help", which starts an
-  SOS). With no answer in 15 seconds the officer can speak through the user's phone.
+  SOS). With no answer in 45 seconds the officer can speak through the user's phone.
 - **Filters.** Alerts: All, Active SOS, Ended SOS, AI threats, Remote area. Live streams: All,
   Only police listening, With other listeners, Remote area, Weak or lost signal. Filters change
   only what is listed; the map and the CSV keep everything.
@@ -538,7 +538,7 @@ These public servers are meant for light use.
   group must be among them; they change nothing else (vote threshold, credibility weight,
   what a member may do). A member's weightage is shown only to them. Group weights are as of
   the last hourly recalculation, except the pushing group's, which is recalculated at the push.
-- There is no admin role in ExiThreat, and no way to leave or change group.
+- A member cannot leave or change group; only the admin can move them.
 - An account's email or mobile cannot be changed. Its owner can delete it (Account page, or
   `/delete-account`), which removes everything it wrote.
 - Only Indian mobile numbers are accepted.
@@ -547,12 +547,13 @@ These public servers are meant for light use.
   set up, but no real sign-up has been made there yet.
 - Until two groups have 5 members each, nobody can post; with three groups it takes at least
   15 accounts before a post can also move on.
-- Redaction is pattern-based, for English text with Indian and US formats. It misses names in
+- While AI redaction is off, redaction is pattern-based only, for English text with Indian and US formats. It misses names in
   lower case, a single name with nothing around it to mark it as one, and other languages. It
   redacts place names along with personal names. Posts made before a rule was added keep the
   redaction they got at the time.
-- A post cannot be edited or deleted, and there is no moderation, reporting or terms
-  of use on the site yet. The privacy policy is at `/privacy` (it covers the Android app too).
+- A post cannot be edited, and its author can delete it only by deleting the whole account.
+  Moderation is by the admin, from members' reports; nothing is moderated automatically. The
+  privacy policy is at `/privacy` (it covers the Android app too).
 - The author is not notified when a post moves or gets a comment; "Mine" shows the current
   counts.
 - The officer page's lists, badges and filters have been checked in a browser against
