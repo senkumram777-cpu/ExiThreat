@@ -74,6 +74,8 @@ export interface Post {
   redactedContent: string;
   /** The type of threat its author chose (lib/categories.ts); null when none. */
   category: string | null;
+  /** The second choice under the type (lib/categories.ts SUBCATEGORIES), if it has one. */
+  subcategory?: string | null;
   totalWeight: number;
   createdAt: string;
   /** The reader's own group among those the post is in (null for the author). */
@@ -108,12 +110,23 @@ export interface CommonPost {
   id: string;
   /** Its place in the list, 1 first. */
   rank: number;
-  /** The author's pseudonym. */
-  author: string;
+  /**
+   * The author's pseudonym. For an officer, null on a complaint about the police until its author
+   * allows them to see it.
+   */
+  author: string | null;
   redactedContent: string;
   category: string | null;
-  /** Officers only. */
+  /** The second choice under the type (lib/categories.ts SUBCATEGORIES), if it has one. */
+  subcategory?: string | null;
+  /** Officers only, and on a complaint about the police only once its author allows it. */
   originalContent?: string;
+  /** Officers only, like the original: the author's mobile number, null when none is on record. */
+  contactNumber?: string | null;
+  /** Officers only: a complaint about the police, whose details the author must allow. */
+  protected?: boolean;
+  /** Officers only, on a protected post: this officer's request for its details. */
+  request?: OfficerRequestStatus | null;
   createdAt: string;
   listedAt: string;
   /** How long it took to reach 20% of the groups. */
@@ -170,11 +183,27 @@ export interface GroupMap {
   edges: GroupMapEdge[];
 }
 
+export type OfficerRequestStatus = 'pending' | 'granted' | 'refused';
+
+/**
+ * An officer asking the author of a complaint about the police for its exact words, pseudonym
+ * and mobile number. The author sees the officer's branch only.
+ */
+export interface OfficerRequest {
+  id: string;
+  branch: string;
+  status: OfficerRequestStatus;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
 /** One of the signed-in user's own posts, as listed under "My Disclosures". */
 export interface MyPost {
   id: string;
   redactedContent: string;
   category: string | null;
+  /** The second choice under the type (lib/categories.ts SUBCATEGORIES), if it has one. */
+  subcategory?: string | null;
   totalWeight: number;
   createdAt: string;
   lastManualPushAt: string | null;
@@ -185,6 +214,8 @@ export interface MyPost {
   /** The number of groups it is in now, and when it last reached one. */
   inGroups: number;
   arrivedAt: string;
+  /** Officers who asked to see what a complaint about the police keeps from them, newest first. */
+  officerRequests: OfficerRequest[];
 }
 
 export interface Comment {
@@ -221,6 +252,8 @@ export interface GroupDetail extends Group {
     id: string;
     redactedContent: string;
     category: string | null;
+    /** The second choice under the type (lib/categories.ts SUBCATEGORIES), if it has one. */
+    subcategory?: string | null;
     totalWeight: number;
     createdAt: string;
     /** The author's pseudonym. */
@@ -431,11 +464,15 @@ export const auth = {
 
 export const posts = {
   /**
-   * `category`: the type of threat (lib/categories.ts), or null for none. `aiChecked`: whether
-   * the preview the author approved had the AI check; one that had it is not saved without it.
+   * `category`: the type of threat (lib/categories.ts), or null for none, and `subcategory` the
+   * second choice under it where it has one. `aiChecked`: whether the preview the author approved
+   * had the AI check; one that had it is not saved without it.
    */
-  create: (content: string, category: string | null, aiChecked: boolean) =>
-    req<Pick<Post, 'id' | 'redactedContent' | 'category' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content, category, aiChecked }),
+  create: (content: string, category: string | null, subcategory: string | null, aiChecked: boolean) =>
+    req<Pick<Post, 'id' | 'redactedContent' | 'category' | 'totalWeight' | 'createdAt' | 'groupId'>>('POST', '/posts', { content, category, subcategory, aiChecked }),
+  /** The author answers an officer's request: `allow` shows them the details, otherwise refuses (or takes a yes back). */
+  answerOfficer: (postId: string, requestId: string, allow: boolean) =>
+    req<OfficerRequest>('POST', `/posts/${postId}/officer-requests/${requestId}`, { allow }),
   /** What the redacted version of this text would be, and whether the AI checked it too. Nothing is saved. */
   preview: (content: string) => req<{ redactedContent: string; aiChecked: boolean }>('POST', '/posts/preview', { content }),
   /** Wakes the AI redactor while the author writes, so the preview does not wait for it. */
@@ -502,6 +539,13 @@ export const common = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(res.status === 401 ? 'Sign in again.' : data.error ?? `Request failed (${res.status})`);
     return data as CommonPage;
+  },
+  /** An officer asks the author of a complaint about the police for its details; returns the request's status. */
+  askAuthor: async (token: string, postId: string): Promise<OfficerRequestStatus> => {
+    const res = await fetch(`${BASE}/common/officer/${postId}/request`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(res.status === 401 ? 'Sign in again.' : data.error ?? `Request failed (${res.status})`);
+    return data.request as OfficerRequestStatus;
   },
 };
 

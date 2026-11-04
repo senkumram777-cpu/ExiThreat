@@ -3,13 +3,22 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { pct, useRules } from '@/lib/rules';
+import { posts as postsApi } from '@/lib/api';
 
 export default function HomePage() {
   const rules = useRules();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // Officers waiting for the member's answer about a complaint about the police.
+  const [officersAsking, setOfficersAsking] = useState(0);
 
   useEffect(() => {
-    setIsLoggedIn(!!localStorage.getItem('exithreat_token'));
+    const signedIn = !!localStorage.getItem('exithreat_token');
+    setIsLoggedIn(signedIn);
+    if (signedIn) {
+      postsApi.mine()
+        .then((list) => setOfficersAsking(list.reduce((n, p) => n + (p.officerRequests ?? []).filter((r) => r.status === 'pending').length, 0)))
+        .catch(() => undefined);
+    }
   }, []);
 
   return (
@@ -62,6 +71,11 @@ export default function HomePage() {
             </>
           )}
         </div>
+        {isLoggedIn && officersAsking > 0 && (
+          <Link href="/disclosures" className="text-xs font-mono text-yellow-500 border border-yellow-700/50 rounded-lg px-3 py-2 no-underline">
+            {officersAsking === 1 ? 'A police officer is' : `${officersAsking} police officers are`} asking to see your details. Answer in My Disclosures.
+          </Link>
+        )}
         {!isLoggedIn && (
           <Link href="/law-enforcement" className="text-xs font-mono text-gray-500 hover:text-accent-teal transition-colors">
             Law enforcement sign in

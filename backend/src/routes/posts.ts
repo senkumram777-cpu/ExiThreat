@@ -10,7 +10,7 @@ import { recalculateGroupWeight } from '../services/groupWeightService';
 import { groupMapFor } from '../services/groupMapService';
 import { recalculateSpread } from '../services/spreadService';
 import { LIMITS, readText } from '../services/validation';
-import { readCategory } from '../services/categories';
+import { readCategory, readSubcategory } from '../services/categories';
 import { notBlockedBy } from './moderation';
 
 const router = Router();
@@ -52,6 +52,11 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
     res.status(400).json({ error: category.error });
     return;
   }
+  const subcategory = readSubcategory(category.category, req.body?.subcategory);
+  if (!subcategory.ok) {
+    res.status(400).json({ error: subcategory.error });
+    return;
+  }
 
   // Assign to a random group that has enough members and that the author is not in
   const groupId = await pickGroupForPost(userId);
@@ -82,6 +87,7 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
       originalContent,
       redactedContent,
       category: category.category,
+      subcategory: subcategory.subcategory,
       ocUserId: userId,
       placements: { create: { groupId } },
     },
@@ -89,6 +95,7 @@ router.post('/', requireAuth, requireTerms, handle(async (req: AuthRequest, res:
       id: true,
       redactedContent: true,
       category: true,
+      subcategory: true,
       totalWeight: true,
       createdAt: true,
     },
@@ -126,12 +133,18 @@ router.get('/mine', requireAuth, handle(async (req: AuthRequest, res: Response):
       id: true,
       redactedContent: true,
       category: true,
+      subcategory: true,
       totalWeight: true,
       createdAt: true,
       lastManualPushAt: true,
       hiddenAt: true,
       _count: { select: { pushVotes: true, comments: true, history: true } },
       placements: PLACEMENTS,
+      // Officers asking for what a complaint about the police keeps from them (routes/common.ts).
+      officerRequests: {
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, branch: true, status: true, createdAt: true, decidedAt: true },
+      },
     },
   });
   res.json(posts.map(({ placements, ...post }) => {
@@ -227,6 +240,31 @@ router.post('/:id/strip/done', requireAuth, handle(async (req: AuthRequest, res:
   res.json({ ok: true });
 }));
 
+// POST /api/posts/:id/officer-requests/:requestId — the author answers an officer who asked for
+// the exact words, pseudonym and mobile number of their complaint about the police:
+// `{ allow: true }` shows them to that officer, `{ allow: false }` refuses (or withdraws a yes).
+router.post('/:id/officer-requests/:requestId', requireAuth, handle(async (req: AuthRequest, res: Response): Promise<void> => {
+  const allow = (req.body as { allow?: unknown } | undefined)?.allow;
+  if (typeof allow !== 'boolean') {
+    res.status(400).json({ error: 'allow must be true or false' });
+    return;
+  }
+  const request = await prisma.officerDetailRequest.findFirst({
+    where: { id: req.params.requestId, postId: req.params.id, post: { ocUserId: req.userId! } },
+    select: { id: true },
+  });
+  if (!request) {
+    res.status(404).json({ error: 'Request not found' });
+    return;
+  }
+  const updated = await prisma.officerDetailRequest.update({
+    where: { id: request.id },
+    data: { status: allow ? 'granted' : 'refused', decidedAt: new Date() },
+    select: { id: true, branch: true, status: true, createdAt: true, decidedAt: true },
+  });
+  res.json(updated);
+}));
+
 // GET /api/posts/:id — fetch post metadata + redacted content.
 // Only for members of the post's current group and its author. Who wrote it is sent only as
 // their pseudonym, and whether it is the caller's own.
@@ -239,6 +277,7 @@ router.get('/:id', requireAuth, handle(async (req: AuthRequest, res: Response): 
       id: true,
       redactedContent: true,
       category: true,
+      subcategory: true,
       totalWeight: true,
       createdAt: true,
       ocUserId: true,

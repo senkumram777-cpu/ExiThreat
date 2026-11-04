@@ -19,7 +19,10 @@ import {
   checkCode,
   consumeProofs,
   fingerprintOf,
+  normalizePhone,
   proofOf,
+  sealContact,
+  sealedProof,
   startEmailVerification,
 } from '../services/contactService';
 import { phoneProofFromToken } from '../services/phoneVerification';
@@ -193,6 +196,7 @@ router.post('/register', registerLimit, handle(async (req: Request, res: Respons
   await contactStep(res, async () => {
     const emailHash = await proofOf('email', emailVerificationId);
     const phoneHash = await proofOf('phone', phoneVerificationId);
+    const phoneSealed = await sealedProof(phoneVerificationId);
     // Only someone who has just proved they own the address or number can learn that it is in use.
     await assertUnused('email', emailHash);
     await assertUnused('phone', phoneHash);
@@ -207,7 +211,7 @@ router.post('/register', registerLimit, handle(async (req: Request, res: Respons
       return;
     }
     const passwordHash = await bcrypt.hash(password as string, 12);
-    const user = await createWithPseudonym({ username, passwordHash, emailHash, phoneHash });
+    const user = await createWithPseudonym({ username, passwordHash, emailHash, phoneHash, phoneSealed });
     await consumeProofs(emailVerificationId, phoneVerificationId);
     await ensureGroup(user.id);
     res.status(201).json(session(user));
@@ -215,7 +219,9 @@ router.post('/register', registerLimit, handle(async (req: Request, res: Respons
 }));
 
 /** Creates the account with a random pseudonym, drawing again in the rare case it is taken. */
-async function createWithPseudonym(data: { username: string; passwordHash: string; emailHash: string; phoneHash: string }) {
+async function createWithPseudonym(data: {
+  username: string; passwordHash: string; emailHash: string; phoneHash: string; phoneSealed: string | null;
+}) {
   for (let attempt = 0; ; attempt++) {
     const pseudonym = randomPseudonym();
     if (attempt < 5 && (await prisma.user.findUnique({ where: { pseudonym }, select: { id: true } }))) continue;
@@ -234,12 +240,14 @@ router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request,
   }
 
   let user = null;
+  let viaPhone = false;
   if (identifier.includes('@')) {
     const hash = fingerprintOf('email', identifier);
     if (hash) user = await prisma.user.findUnique({ where: { emailHash: hash } });
   } else {
     const hash = fingerprintOf('phone', identifier);
     if (hash) user = await prisma.user.findUnique({ where: { phoneHash: hash } });
+    viaPhone = !!user;
     // Older usernames may be digits only.
     if (!user) user = await prisma.user.findUnique({ where: { username: identifier } });
   }
@@ -253,6 +261,10 @@ router.post('/login', loginAddressLimit, loginLimit, handle(async (req: Request,
     res.status(403).json({ error: SUSPENDED_MESSAGE, code: SUSPENDED });
     return;
   }
+  // An account from before mobile numbers were kept (encrypted) keeps the one it signed in with:
+  // it matches the number the account confirmed.
+  const phone = viaPhone && !user.phoneSealed ? normalizePhone(identifier) : null;
+  if (phone) await prisma.user.update({ where: { id: user.id }, data: { phoneSealed: sealContact(phone) } });
   // Accounts from before groups were assigned get theirs here.
   await ensureGroup(user.id);
   res.json(session(user));
@@ -308,9 +320,12 @@ router.post('/contact', requireSignedIn, handle(async (req: AuthRequest, res: Re
     return;
   }
   await contactStep(res, async () => {
-    const data: { emailHash?: string; phoneHash?: string } = {};
+    const data: { emailHash?: string; phoneHash?: string; phoneSealed?: string | null } = {};
     if (!user.emailHash) data.emailHash = await proofOf('email', emailVerificationId);
-    if (!user.phoneHash) data.phoneHash = await proofOf('phone', phoneVerificationId);
+    if (!user.phoneHash) {
+      data.phoneHash = await proofOf('phone', phoneVerificationId);
+      data.phoneSealed = await sealedProof(phoneVerificationId);
+    }
     if (data.emailHash) await assertUnused('email', data.emailHash, user.id);
     if (data.phoneHash) await assertUnused('phone', data.phoneHash, user.id);
     const updated = await prisma.user.update({ where: { id: user.id }, data });
@@ -348,7 +363,12 @@ router.post('/reset', loginAddressLimit, handle(async (req: Request, res: Respon
     const passwordHash = await bcrypt.hash(newPassword as string, 12);
     // Token times are whole seconds: from the next one, so that older tokens of this second end too.
     const from = new Date((Math.floor(Date.now() / 1000) + 1) * 1000);
-    const updated = await prisma.user.update({ where: { id: user.id }, data: { passwordHash, tokensValidFrom: from } });
+    // A reset by mobile also keeps the number (encrypted) for an account from before that was done.
+    const phoneSealed = channel === 'phone' && !user.phoneSealed ? await sealedProof(verificationId) : null;
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, tokensValidFrom: from, ...(phoneSealed ? { phoneSealed } : {}) },
+    });
     await consumeProofs(verificationId);
     // The new token is issued in the next second, so that it is not cut off with the old ones.
     await new Promise((resolve) => setTimeout(resolve, Math.max(0, from.getTime() - Date.now())));

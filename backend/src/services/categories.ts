@@ -27,3 +27,24 @@ export function readCategory(value: unknown): { ok: true; category: Category | n
   if (isCategory(value)) return { ok: true, category: value };
   return { ok: false, error: 'Unknown type of threat' };
 }
+
+/**
+ * The second choice under a type, where it has one; the website asks for it once that type is
+ * chosen. A complaint about the police is protected from officers (services/policeComplaint.ts).
+ */
+export const SUBCATEGORIES: Partial<Record<Category, Record<string, string>>> = {
+  official: {
+    police: 'Police or law enforcement',
+    other: 'Other government official',
+  },
+};
+
+/** A post's second choice from a request: required for a type that has them, refused otherwise. */
+export function readSubcategory(category: Category | null, value: unknown):
+  { ok: true; subcategory: string | null } | { ok: false; error: string } {
+  const options = category ? SUBCATEGORIES[category] : undefined;
+  const given = value === undefined || value === null || value === '' ? null : value;
+  if (!options) return given === null ? { ok: true, subcategory: null } : { ok: false, error: 'This type of threat has no second choice' };
+  if (typeof given === 'string' && Object.prototype.hasOwnProperty.call(options, given)) return { ok: true, subcategory: given };
+  return { ok: false, error: `Choose who it was: ${Object.values(options).join(' or ')}` };
+}

@@ -4,7 +4,7 @@ import Link from 'next/link';
 export const metadata: Metadata = { title: 'Privacy Policy · ExiThreat' };
 
 const CONTACT = 'senkumram777@gmail.com';
-const UPDATED = '26 October 2026';
+const UPDATED = '4 November 2026';
 
 // The ExiThreat website and Android app share this policy (Play Store listing → Privacy policy).
 // Keep it in step with what the backend stores: backend/prisma/schema.prisma.
@@ -30,9 +30,12 @@ export default function PrivacyPage() {
             hash; nobody, including us, can read it.
           </li>
           <li>
-            <b>Your email address and Indian mobile number:</b> each is confirmed with a 6-digit code and then
-            stored only as a one-way fingerprint, never as the address or number itself. The fingerprint keeps
-            each email and mobile to one account and lets you sign in or reset your password with them.
+            <b>Your email address and Indian mobile number:</b> each is confirmed with a 6-digit code and
+            stored as a one-way fingerprint, which keeps each email and mobile to one account and lets you sign
+            in or reset your password with them. The email address itself is never stored. Your mobile number
+            is also stored encrypted, only so that police officers can be given it (see below); if your account
+            was made before we did this, it is stored the next time you sign in or reset your password with
+            your mobile number.
           </li>
           <li>
             <b>A random pseudonym</b> given to you at sign-up, shown with your posts, comments and chat instead
@@ -76,8 +79,12 @@ export default function PrivacyPage() {
             where members see the redacted copy.
           </li>
           <li>
-            Police officers registered through ProMic&apos;s law-enforcement programme can read both the
-            original and the redacted copy of disclosures on the common page.
+            Police officers registered through ProMic&apos;s law-enforcement programme can read the original
+            and the redacted copy of disclosures on the common page, with the author&apos;s pseudonym and mobile
+            number. A disclosure about the police (one filed as about the police, or whose words mention the
+            police) is the exception: officers see only its redacted copy, without the pseudonym or mobile
+            number, unless its author allows an officer who asks. The author sees the officer&apos;s branch and
+            can refuse, or take back a yes.
           </li>
           <li>
             The administrator can read posts, comments and group chat, reads the reports members send, and can

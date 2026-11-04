@@ -5,7 +5,7 @@ import AgreeToTerms from '@/components/AgreeToTerms';
 export const metadata: Metadata = { title: 'Terms of Use · ExiThreat' };
 
 const CONTACT = 'senkumram777@gmail.com';
-const UPDATED = '26 October 2026';
+const UPDATED = '4 November 2026';
 
 // The ExiThreat website and Android app share these terms; members agree to them when they sign
 // up (older accounts before they next write anything: backend middleware/auth.ts, requireTerms).
@@ -78,7 +78,8 @@ export default function TermsPage() {
       <Section title="Your content">
         <p>
           What you write remains yours. You allow ExiThreat to store it, redact it, and show it to other members, and
-          to police officers on the common page, as described in the{' '}
+          to police officers on the common page with your pseudonym and mobile number (for a disclosure about
+          the police, only once you allow it), as described in the{' '}
           <Link href="/privacy" className="text-accent-teal">Privacy Policy</Link>. You can delete your account, and
           with it everything you wrote, at any time from the Account page.
         </p>

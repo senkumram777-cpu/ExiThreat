@@ -93,6 +93,7 @@ export interface AdminPost {
   originalContent: string;
   redactedContent: string;
   category: string | null;
+  subcategory?: string | null;
   createdAt: string;
   totalWeight: number;
   cycle: number;

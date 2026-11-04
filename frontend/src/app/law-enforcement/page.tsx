@@ -369,6 +369,7 @@ export default function LawEnforcementPage() {
     (offset: number, category: string) => common.officerList(sessionToken ?? '', offset, category),
     [sessionToken],
   );
+  const askAuthor = useCallback((postId: string) => common.askAuthor(sessionToken ?? '', postId), [sessionToken]);
 
   const onDashboardSessionEnded = useCallback(() => {
     store(SESSION_KEY, null);
@@ -424,10 +425,10 @@ export default function LawEnforcementPage() {
           </summary>
           <p className={`${introClass} mt-3 mb-4`}>
             Disclosures that have reached at least {pct(rules.listShare)} of ExiThreat&apos;s groups, the fastest
-            spreading first, with both the original and the redacted version. Authors appear by
-            pseudonym only.
+            spreading first, with the original, the redacted version, the author&apos;s pseudonym and mobile
+            number. A complaint about the police shows the redacted version only: ask its author for the rest.
           </p>
-          <CommonFeed load={loadCommon} officer onUnauthorized={onDashboardSessionEnded} />
+          <CommonFeed load={loadCommon} officer askAuthor={askAuthor} onUnauthorized={onDashboardSessionEnded} />
         </details>
       )}
 

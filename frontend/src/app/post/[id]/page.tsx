@@ -191,7 +191,7 @@ export default function PostPage() {
         <div className="p-4 bg-navy-800 rounded-xl border border-gray-800">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="text-xs font-mono text-gray-600 uppercase tracking-widest">Redacted Version</div>
-            <CategoryTag category={post.category} />
+            <CategoryTag category={post.category} subcategory={post.subcategory} />
           </div>
           {firstLookNote && (
             <div className="text-xs font-mono text-yellow-600 mb-3">{firstLookNote}</div>

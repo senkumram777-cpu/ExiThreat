@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { CommonPage, CommonPost } from '@/lib/api';
+import type { CommonPage, CommonPost, OfficerRequestStatus } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
 import { groupsPerDay } from '@/lib/weight';
 import ReportBlock from './ReportBlock';
@@ -12,8 +12,10 @@ import { CATEGORIES, CATEGORY_KEYS } from '@/lib/categories';
  * The common page's list: posts that have reached the listing share of the groups (20% unless an
  * admin changed it), fastest spreading first,
  * each tagged with its author's pseudonym. Members get the redacted version; officers
- * (`officer`) the original as well. `load` fetches one page from an offset, of one type of threat
- * when one is chosen above the list.
+ * (`officer`) the original and the author's mobile number as well, except on a complaint about the
+ * police: there they get the redacted version only, and can ask the author for the rest
+ * (`askAuthor`). `load` fetches one page from an offset, of one type of threat when one is chosen
+ * above the list.
  */
 
 function duration(ms: number): string {
@@ -24,20 +26,78 @@ function duration(ms: number): string {
   return `${Math.floor(hours / 24)} days ${hours % 24} h`;
 }
 
-function PostCard({ post, officer, listShare, onBlocked }: {
+const REQUEST_NOTE: Record<OfficerRequestStatus, string> = {
+  pending: 'You asked the author. Their details appear here if they allow it.',
+  granted: 'The author allowed you to see their details.',
+  refused: 'The author refused. Their details stay withheld.',
+};
+
+/** On a complaint about the police: what is withheld, and asking the author for it. */
+function Withheld({ post, askAuthor }: { post: CommonPost; askAuthor?: (postId: string) => Promise<OfficerRequestStatus> }) {
+  const [request, setRequest] = useState<OfficerRequestStatus | null>(post.request ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const shown = post.originalContent !== undefined;
+  return (
+    <div className="rounded-lg border border-yellow-700/50 bg-navy-900 p-3 flex flex-col gap-2 text-xs font-mono">
+      <div className="text-yellow-500 font-bold uppercase tracking-widest text-[11px]">Complaint about the police</div>
+      {!shown && (
+        <p className="text-gray-400 leading-relaxed">
+          Only the redacted version is shown. The author&apos;s exact words, pseudonym and mobile number are
+          shown to you only if the author allows it.
+        </p>
+      )}
+      {request && <p className="text-gray-300">{REQUEST_NOTE[request]}</p>}
+      {!request && askAuthor && (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              setRequest(await askAuthor(post.id));
+            } catch (err) {
+              setError((err as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="self-start px-3 py-1.5 border border-yellow-600 text-yellow-500 rounded-lg font-bold disabled:opacity-40 hover:bg-yellow-600/10 transition-colors"
+        >
+          {busy ? 'Asking…' : 'Ask the author for their details'}
+        </button>
+      )}
+      {error && <p className="text-accent-red">{error}</p>}
+    </div>
+  );
+}
+
+function PostCard({ post, officer, listShare, onBlocked, askAuthor }: {
   post: CommonPost; officer: boolean; listShare: number; onBlocked: (author: string) => void;
+  askAuthor?: (postId: string) => Promise<OfficerRequestStatus>;
 }) {
   const share = post.eligibleGroups > 0 ? Math.round((post.reachedGroups / post.eligibleGroups) * 100) : 0;
   return (
     <article className="p-4 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3">
       <div className="flex items-center gap-2 text-xs font-mono">
         <span className="text-accent-teal font-bold">#{post.rank}</span>
-        <span className="text-gray-300">{post.author}</span>
-        <CategoryTag category={post.category} />
+        <span className={post.author ? 'text-gray-300' : 'text-gray-600 italic'}>{post.author ?? 'Pseudonym withheld'}</span>
+        <CategoryTag category={post.category} subcategory={post.subcategory} />
         <span className="text-gray-600 ml-auto">{new Date(post.createdAt).toLocaleDateString()}</span>
         {/* Members only: officers read the page through ProMic, not as members. */}
-        {!officer && <ReportBlock targetType="post" targetId={post.id} author={post.author} onBlocked={onBlocked} />}
+        {!officer && post.author && <ReportBlock targetType="post" targetId={post.id} author={post.author} onBlocked={onBlocked} />}
       </div>
+
+      {officer && post.protected && <Withheld post={post} askAuthor={askAuthor} />}
+      {officer && post.contactNumber !== undefined && (
+        <div className="text-xs font-mono text-gray-400">
+          Mobile:{' '}
+          {post.contactNumber
+            ? <a href={`tel:${post.contactNumber}`} className="text-accent-teal">{post.contactNumber}</a>
+            : <span className="text-gray-600">not on record</span>}
+        </div>
+      )}
 
       {officer && post.originalContent !== undefined && (
         <div className="rounded-lg border border-accent-red/30 bg-navy-900 p-3">
@@ -78,10 +138,13 @@ export default function CommonFeed({
   load,
   officer = false,
   onUnauthorized,
+  askAuthor,
 }: {
   load: (offset: number, category: string) => Promise<CommonPage>;
   officer?: boolean;
   onUnauthorized?: () => void;
+  /** Officers only: asks the author of a complaint about the police for its details. */
+  askAuthor?: (postId: string) => Promise<OfficerRequestStatus>;
 }) {
   const rules = useRules();
   const [posts, setPosts] = useState<CommonPost[] | null>(null);
@@ -153,6 +216,7 @@ export default function CommonFeed({
           key={post.id}
           post={post}
           officer={officer}
+          askAuthor={askAuthor}
           listShare={rules.listShare}
           // A blocked member's posts leave the page; the server leaves them out from now on.
           onBlocked={() => { void fetchFrom(0); }}

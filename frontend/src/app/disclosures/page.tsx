@@ -7,6 +7,7 @@ import { backedBy } from '@/lib/weight';
 import { posts as postsApi, type MyPost } from '@/lib/api';
 import { getSession } from '@/lib/session';
 import CategoryTag from '@/components/CategoryTag';
+import OfficerRequests from '@/components/OfficerRequests';
 
 /** The signed-in user's own disclosures: the only way back to them, as they sit in other groups. */
 export default function DisclosuresPage() {
@@ -27,6 +28,8 @@ export default function DisclosuresPage() {
       .finally(() => setLoading(false));
   }, [router]);
 
+  const pending = list.reduce((n, p) => n + (p.officerRequests ?? []).filter((r) => r.status === 'pending').length, 0);
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -42,6 +45,13 @@ export default function DisclosuresPage() {
       </p>
 
       {error && <div className="text-accent-red text-xs font-mono">{error}</div>}
+
+      {pending > 0 && (
+        <div className="p-3 rounded-xl border border-yellow-700/50 text-xs font-mono text-yellow-500">
+          {pending === 1 ? 'A police officer has' : `${pending} police officers have`} asked to see your details.
+          Only you decide: see below.
+        </div>
+      )}
 
       {loading && (
         <div className="grid grid-cols-1 gap-3">
@@ -59,28 +69,30 @@ export default function DisclosuresPage() {
 
       <div className="flex flex-col gap-3">
         {list.map((post) => (
-          <Link
-            key={post.id}
-            href={`/post/${post.id}/map`}
-            className="block p-4 bg-navy-800 border border-gray-800 rounded-xl hover:border-accent-teal/40 transition-colors no-underline"
-          >
-            <CategoryTag category={post.category} className="mb-2" />
-            <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">{post.redactedContent}</p>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-gray-500">
-              {post.hiddenAt && <span className="text-accent-red">Hidden by an admin</span>}
-              <span>⚖ {backedBy(post.totalWeight)}</span>
-              <span>
-                {post._count.history} group{post._count.history !== 1 ? 's' : ''} passed
-              </span>
-              <span>
-                in {post.inGroups} group{post.inGroups !== 1 ? 's' : ''} now, last reached{' '}
-                {new Date(post.arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-              </span>
-              <span>▲ {post._count.pushVotes} votes now</span>
-              <span>💬 {post._count.comments}</span>
-              <span>{new Date(post.createdAt).toLocaleDateString()}</span>
-            </div>
-          </Link>
+          <div key={post.id}>
+            <Link
+              href={`/post/${post.id}/map`}
+              className="block p-4 bg-navy-800 border border-gray-800 rounded-xl hover:border-accent-teal/40 transition-colors no-underline"
+            >
+              <CategoryTag category={post.category} subcategory={post.subcategory} className="mb-2" />
+              <p className="font-mono text-sm text-gray-300 line-clamp-2 mb-2">{post.redactedContent}</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-mono text-gray-500">
+                {post.hiddenAt && <span className="text-accent-red">Hidden by an admin</span>}
+                <span>⚖ {backedBy(post.totalWeight)}</span>
+                <span>
+                  {post._count.history} group{post._count.history !== 1 ? 's' : ''} passed
+                </span>
+                <span>
+                  in {post.inGroups} group{post.inGroups !== 1 ? 's' : ''} now, last reached{' '}
+                  {new Date(post.arrivedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                </span>
+                <span>▲ {post._count.pushVotes} votes now</span>
+                <span>💬 {post._count.comments}</span>
+                <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+              </div>
+            </Link>
+            <OfficerRequests postId={post.id} requests={post.officerRequests ?? []} />
+          </div>
         ))}
       </div>
     </div>

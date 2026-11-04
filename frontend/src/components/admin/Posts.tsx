@@ -113,7 +113,7 @@ function PostDetail({ id, nav, onChanged }: { id: string; nav: AdminNav; onChang
           <span>{p.author.pseudonym}</span>
           <span>{when(p.createdAt)}</span>
           <PostBadges post={p} />
-          <CategoryTag category={p.category} />
+          <CategoryTag category={p.category} subcategory={p.subcategory} />
         </div>
         {p.hiddenAt && (
           <div className="text-xs font-mono text-accent-red mb-3">Hidden {when(p.hiddenAt)}{p.hiddenReason ? ` — ${p.hiddenReason}` : ''}</div>

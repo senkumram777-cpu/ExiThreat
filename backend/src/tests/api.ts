@@ -15,6 +15,7 @@ import http from 'http';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { openContact } from '../services/contactSeal';
 
 const ROOT = path.join(__dirname, '..', '..');
 // Not 4190: fetch refuses a list of ports reserved for other protocols, and that is one.
@@ -208,6 +209,8 @@ async function accountChecks(): Promise<void> {
   check('only fingerprints are stored, not the email or number',
     /^[0-9a-f]{64}$/.test(stored.emailHash ?? '') && /^[0-9a-f]{64}$/.test(stored.phoneHash ?? '')
       && !JSON.stringify(stored).includes('asha.k') && !JSON.stringify(stored).includes(asha.phone));
+  check('the mobile number is also kept, encrypted, for officers', openContact(stored.phoneSealed) === `91${asha.phone}`,
+    stored.phoneSealed);
   check('the same email in another form cannot sign up again',
     (await registerWith('asha2', 'Asha.K+second@GMAIL.com', newContact().phone)).status === 409);
   check('the same mobile number in another form cannot sign up again',
@@ -675,6 +678,79 @@ async function run(): Promise<void> {
       && (await idsFor('/common?category=nonsense', newcomer.token)).length === listedIds.length
       && JSON.stringify(await idsFor('/common/officer?category=official', 'test-officer:officer-1'))
         === JSON.stringify([`${spreadId}:official`]));
+
+  // ── complaints about the police: officers get the redacted version only, unless the author allows ──
+  const officerView = async (token: string) => ((await call('GET', '/common/officer', token)).data.posts ?? [])
+    .find((p: { id: string }) => p.id === spreadId);
+  const u1Number = openContact((await prisma.user.findUniqueOrThrow({ where: { id: u1.userId } })).phoneSealed);
+  await prisma.post.update({ where: { id: spreadId }, data: { subcategory: 'other', originalContent: 'The tahsildar took a bribe from me.' } });
+  let officerSaw = await officerView('test-officer:officer-1');
+  check('an officer sees the original, pseudonym and mobile number of any other post',
+    officerSaw?.protected === false && officerSaw?.originalContent === 'The tahsildar took a bribe from me.' && officerSaw?.author === u1Me.pseudonym
+      && /^91\d{10}$/.test(u1Number ?? '') && officerSaw?.contactNumber === `+${u1Number}` && officerSaw?.request === null, officerSaw);
+  const memberPage = (await call('GET', '/common', newcomer.token)).data;
+  check('members never get the number or the original',
+    !JSON.stringify(memberPage).includes(u1Number!)
+      && memberPage.posts.every((p: { originalContent?: string; contactNumber?: string }) => p.originalContent === undefined && p.contactNumber === undefined));
+  r = await call('POST', `/common/officer/${spreadId}/request`, 'test-officer:officer-1');
+  check('there is nothing to ask for on a post that is not about the police', r.status === 400, r.data);
+  await prisma.post.update({ where: { id: spreadId }, data: { originalContent: 'The constable hit me at the station.' } });
+  officerSaw = await officerView('test-officer:officer-1');
+  check('a post whose words mention the police is protected, whatever its type',
+    officerSaw?.protected === true && officerSaw?.originalContent === undefined && officerSaw?.author === null && officerSaw?.contactNumber === undefined
+      && typeof officerSaw?.redactedContent === 'string' && officerSaw?.request === null, officerSaw);
+  await prisma.post.update({ where: { id: spreadId }, data: { subcategory: 'police', originalContent: 'An official took a bribe from me.' } });
+  officerSaw = await officerView('test-officer:officer-1');
+  const officerPage = JSON.stringify((await call('GET', '/common/officer', 'test-officer:officer-1')).data);
+  check('and one filed under "Police or law enforcement"',
+    officerSaw?.protected === true && officerSaw?.author === null && !officerPage.includes('An official took a bribe')
+      && !JSON.stringify(officerSaw).includes(u1Number!) && !JSON.stringify(officerSaw).includes(u1Me.pseudonym), officerSaw);
+  check('members still see it as before',
+    (await call('GET', '/common', newcomer.token)).data.posts.find((p: { id: string }) => p.id === spreadId)?.author === u1Me.pseudonym);
+  check('only an officer can ask', (await call('POST', `/common/officer/${spreadId}/request`, u1.token)).status === 401
+    && (await call('POST', '/common/officer/no-such-post/request', 'test-officer:officer-1')).status === 404);
+  r = await call('POST', `/common/officer/${spreadId}/request`, 'test-officer:officer-1');
+  check('an officer asks the author', r.status === 201 && r.data.request === 'pending', r.data);
+  check('asking again changes nothing', (await call('POST', `/common/officer/${spreadId}/request`, 'test-officer:officer-1')).data.request === 'pending');
+  await call('POST', `/common/officer/${spreadId}/request`, 'test-officer:officer-2');
+  officerSaw = await officerView('test-officer:officer-1');
+  check('while it waits, the officer still gets the redacted version only',
+    officerSaw?.request === 'pending' && officerSaw?.originalContent === undefined && officerSaw?.author === null, officerSaw);
+  const mine = (await call('GET', '/posts/mine', u1.token)).data.find((p: { id: string }) => p.id === spreadId);
+  const asked = mine?.officerRequests?.find((q: { branch: string; status: string }) => q.status === 'pending');
+  check('the author sees who asked: the branch, not the officer',
+    mine?.officerRequests?.length === 2 && asked?.branch === 'Test' && !JSON.stringify(mine).includes('officer-1'), mine?.officerRequests);
+  const [ask1, ask2] = await Promise.all(['officer-1', 'officer-2'].map((officerId) =>
+    prisma.officerDetailRequest.findUniqueOrThrow({ where: { postId_officerId: { postId: spreadId, officerId } } })));
+  check('nobody but the author can answer',
+    (await call('POST', `/posts/${spreadId}/officer-requests/${ask1.id}`, reader.token, { allow: true })).status === 404
+      && (await call('POST', `/posts/${spreadId}/officer-requests/${ask1.id}`, u1.token, { allow: 'yes' })).status === 400);
+  r = await call('POST', `/posts/${spreadId}/officer-requests/${ask1.id}`, u1.token, { allow: true });
+  check('the author allows one officer', r.status === 200 && r.data.status === 'granted', r.data);
+  officerSaw = await officerView('test-officer:officer-1');
+  check('that officer now gets everything',
+    officerSaw?.request === 'granted' && officerSaw?.originalContent === 'An official took a bribe from me.' && officerSaw?.author === u1Me.pseudonym
+      && officerSaw?.contactNumber === `+${u1Number}`, officerSaw);
+  officerSaw = await officerView('test-officer:officer-2');
+  check('another officer still does not', officerSaw?.request === 'pending' && officerSaw?.originalContent === undefined && officerSaw?.author === null, officerSaw);
+  await call('POST', `/posts/${spreadId}/officer-requests/${ask2.id}`, u1.token, { allow: false });
+  officerSaw = await officerView('test-officer:officer-2');
+  check('a refusal stands', officerSaw?.request === 'refused' && officerSaw?.originalContent === undefined
+    && (await call('POST', `/common/officer/${spreadId}/request`, 'test-officer:officer-2')).data.request === 'refused', officerSaw);
+  await call('POST', `/posts/${spreadId}/officer-requests/${ask1.id}`, u1.token, { allow: false });
+  check('the author can take a yes back', (await officerView('test-officer:officer-1'))?.originalContent === undefined);
+  // An older account gets its number kept when it signs in with it.
+  const u1Row = await prisma.user.findUniqueOrThrow({ where: { id: u1.userId } });
+  await prisma.user.update({ where: { id: u1.userId }, data: { phoneSealed: null } });
+  r = await call('POST', '/auth/login', undefined, { identifier: u1Number, password: PASSWORD });
+  check('an account without the number keeps it once it signs in with it',
+    r.status === 200 && openContact((await prisma.user.findUniqueOrThrow({ where: { id: u1.userId } })).phoneSealed) === u1Number, r.data);
+  await prisma.user.update({ where: { id: u1.userId }, data: { phoneSealed: u1Row.phoneSealed } });
+  // The second choice when posting.
+  r = await call('POST', '/posts', u1.token, { content: 'An official at the office took money from me.', category: 'official' });
+  check('"Police or government official" needs the second choice', r.status === 400 && /Police or law enforcement/.test(r.data.error), r.data);
+  r = await call('POST', '/posts', u1.token, { content: 'A street seller kept shouting at me every day.', category: 'street', subcategory: 'police' });
+  check('other types refuse one', r.status === 400, r.data);
 
   // ── a member's own weightage ──
   check('time on the site is added to the day',

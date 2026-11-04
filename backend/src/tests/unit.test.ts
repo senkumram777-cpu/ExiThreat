@@ -368,3 +368,46 @@ test('rules: limits, whole numbers, and the smallest group no larger than the la
   assert.notEqual(ruleError('groupMinMembers', values.groupMaxMembers + 1, values), null);
   assert.notEqual(ruleError('groupMaxMembers', values.groupMinMembers - 1, values), null);
 });
+
+test('police complaints: words that mention the police, in each language', async () => {
+  const { mentionsPolice, isPoliceComplaint } = await import('../services/policeComplaint');
+  for (const text of [
+    'The Police beat my brother at the station.', 'A cop took money from me.', 'The SHO refused to listen.',
+    'Sub-inspector Kumar threatened me', 'the thanedar shouted', 'custodial torture', 'polees came at night',
+    'पुलिसवाले ने मुझे धमकाया', 'थाने में मारा', 'காவல்துறை அதிகாரி மிரட்டினார்', 'போலீஸ் என்னை அடித்தார்',
+    'పోలీసులు బెదిరించారు', 'ಪೊಲೀಸರು ಹೊಡೆದರು', 'പോലീസുകാരൻ ഭീഷണിപ്പെടുത്തി',
+  ]) assert.ok(mentionsPolice(text), text);
+  for (const text of [
+    'My manager shouted at me in the office.', 'Policy changes at work hurt me.', 'The copier jammed',
+    'My neighbour keeps threatening me', 'என் மேலாளர் மிரட்டினார்', 'मेरे पड़ोसी ने धमकाया',
+  ]) assert.ok(!mentionsPolice(text), text);
+  assert.ok(isPoliceComplaint({ subcategory: 'police', originalContent: 'An official took a bribe.' }));
+  assert.ok(isPoliceComplaint({ subcategory: null, originalContent: 'The constable hit me.' }));
+  assert.ok(isPoliceComplaint({ subcategory: 'other', originalContent: 'The inspector hit me.' }));
+  assert.ok(!isPoliceComplaint({ subcategory: 'other', originalContent: 'The tahsildar took a bribe.' }));
+});
+
+test('categories: the second choice under "official"', async () => {
+  const { readSubcategory } = await import('../services/categories');
+  assert.deepEqual(readSubcategory('official', 'police'), { ok: true, subcategory: 'police' });
+  assert.deepEqual(readSubcategory('official', 'other'), { ok: true, subcategory: 'other' });
+  assert.equal(readSubcategory('official', '').ok, false);
+  assert.equal(readSubcategory('official', 'army').ok, false);
+  assert.deepEqual(readSubcategory('street', undefined), { ok: true, subcategory: null });
+  assert.deepEqual(readSubcategory(null, ''), { ok: true, subcategory: null });
+  assert.equal(readSubcategory('street', 'police').ok, false);
+});
+
+test('contact: mobile numbers are encrypted and opened again', async () => {
+  const { sealContact, openContact } = await import('../services/contactSeal');
+  const a = sealContact('+919876543210');
+  const b = sealContact('+919876543210');
+  assert.match(a, /^v1:[A-Za-z0-9+/=]+$/);
+  assert.notEqual(a, b);
+  assert.ok(!a.includes('9876543210'));
+  assert.equal(openContact(a), '+919876543210');
+  const tampered = `v1:${Buffer.from(Buffer.from(a.slice(3), 'base64').map((x, i) => (i === 14 ? x ^ 1 : x))).toString('base64')}`;
+  assert.equal(openContact(tampered), null);
+  assert.equal(openContact(null), null);
+  assert.equal(openContact('garbage'), null);
+});

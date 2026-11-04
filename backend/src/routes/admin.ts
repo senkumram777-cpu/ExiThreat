@@ -280,6 +280,7 @@ const POST_FIELDS = {
   originalContent: true,
   redactedContent: true,
   category: true,
+  subcategory: true,
   createdAt: true,
   totalWeight: true,
   cycle: true,

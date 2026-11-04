@@ -8,21 +8,25 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  username     String   @unique
-  passwordHash String
-  createdAt    DateTime @default(now())
+  id              String    @id @default(uuid())
+  username        String    @unique
+  passwordHash    String
+  createdAt       DateTime  @default(now())
   // Sign-in tokens issued before this moment are refused: set by a password change and by
   // "sign out everywhere" (see middleware/auth.ts).
   tokensValidFrom DateTime?
   // Fingerprints (keyed one-way hashes) of the email address and mobile number, never the
   // values themselves; see services/contactService.ts. Empty only on accounts from before
   // they were required, which must add them before using the site.
-  emailHash String? @unique
-  phoneHash String? @unique
+  emailHash       String?   @unique
+  phoneHash       String?   @unique
+  // The verified mobile number itself, encrypted (services/contactService.ts, sealContact), so
+  // that law-enforcement officers can be given it (routes/common.ts). Set when the number is
+  // confirmed, and for older accounts when they sign in with it or reset with it.
+  phoneSealed     String?
   // The name shown with the member's posts, in groups and on the common page: random, given
   // at registration, never their username (services/pseudonym.ts).
-  pseudonym String  @unique
+  pseudonym       String    @unique
   // The member's own weightage, 0 to 1, from how they use ExiThreat (services/memberWeight.ts):
   // activity (days of use and time on the site), posting, and going through posts to vote.
   // Shown only to the member.
@@ -52,15 +56,15 @@ model User {
 }
 
 model Group {
-  id          String   @id @default(uuid())
-  name        String
+  id              String    @id @default(uuid())
+  name            String
   // The group's weight, 0 to 1: how active its members are (services/groupWeight.ts).
-  trustScore  Float    @default(0.0)
+  trustScore      Float     @default(0.0)
   // Its two halves: members' days of use, and how many posts they went through.
   loginScore      Float     @default(0.0)
   reviewScore     Float?
   weightUpdatedAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt       DateTime  @default(now())
 
   members      GroupMember[]
   placements   PostPlacement[]
@@ -70,14 +74,14 @@ model Group {
 }
 
 model GroupMember {
-  id             String   @id @default(uuid())
-  groupId        String
-  userId         String
-  joinedAt       DateTime @default(now())
-  lastSeenAt     DateTime? // last time the member used the group; decides who counts in a vote
-  visitCount     Int      @default(0)
-  totalTimeSpent Int      @default(0) // seconds
-  readThroughCount Int    @default(0)
+  id               String    @id @default(uuid())
+  groupId          String
+  userId           String
+  joinedAt         DateTime  @default(now())
+  lastSeenAt       DateTime? // last time the member used the group; decides who counts in a vote
+  visitCount       Int       @default(0)
+  totalTimeSpent   Int       @default(0) // seconds
+  readThroughCount Int       @default(0)
 
   group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -88,10 +92,14 @@ model GroupMember {
 
 model Post {
   id               String    @id @default(uuid())
-  originalContent  String    // plain text in the database; sent to clients only as a PNG
+  originalContent  String // plain text in the database; sent to clients only as a PNG
   redactedContent  String
   // The type of threat, chosen by the author (services/categories.ts); null when none was chosen.
   category         String?
+  // The second choice under some types (services/categories.ts SUBCATEGORIES): for "official",
+  // "police" or "other". A complaint about the police is protected from officers
+  // (services/policeComplaint.ts).
+  subcategory      String?
   ocUserId         String
   totalWeight      Float     @default(0.0)
   lastManualPushAt DateTime?
@@ -114,13 +122,14 @@ model Post {
   hiddenReason     String?
   unlistedAt       DateTime?
 
-  oc          User          @relation("OCPosts", fields: [ocUserId], references: [id])
+  oc              User                   @relation("OCPosts", fields: [ocUserId], references: [id])
   // The groups it is in now: one at first, up to five once pushes forward it to several.
-  placements  PostPlacement[]
-  pushVotes   PushVote[]
-  history     PostHistory[]
-  comments    Comment[]
-  viewRecords ViewRecord[]
+  placements      PostPlacement[]
+  pushVotes       PushVote[]
+  history         PostHistory[]
+  comments        Comment[]
+  viewRecords     ViewRecord[]
+  officerRequests OfficerDetailRequest[]
 
   @@index([ocUserId])
   @@index([listedAt, spreadScore])
@@ -146,7 +155,7 @@ model PostHistory {
   id             String   @id @default(uuid())
   postId         String
   groupId        String
-  pushPercentage Float    // % of members who voted push in this group
+  pushPercentage Float // % of members who voted push in this group
   arrivedAt      DateTime @default(now()) // when the post reached this group
   movedAt        DateTime @default(now()) // when it left
   wasManualPush  Boolean  @default(false)
@@ -179,11 +188,11 @@ model Comment {
 // opened; `completedAt` is when the reader closed it. Until it is closed it can be reopened
 // for a short time (see FIRST_LOOK_WINDOW_MS in routes/posts.ts).
 model ViewRecord {
-  id          String    @id @default(uuid())
-  postId      String
-  userId      String
-  viewedAt    DateTime  @default(now())
-  completedAt DateTime?
+  id             String    @id @default(uuid())
+  postId         String
+  userId         String
+  viewedAt       DateTime  @default(now())
+  completedAt    DateTime?
   // When the reader was shown the redacted version after the first look: with completedAt,
   // the post counts as gone through for the group's weight.
   redactedSeenAt DateTime?
@@ -224,13 +233,15 @@ model ProMicLink {
 // that the user owns it. Used once; rows older than a day are removed.
 model ContactVerification {
   id         String    @id @default(uuid())
-  channel    String    // "email" or "phone"
-  targetHash String    // fingerprint of the address or number
+  channel    String // "email" or "phone"
+  targetHash String // fingerprint of the address or number
   codeHash   String
   attempts   Int       @default(0)
   createdAt  DateTime  @default(now())
   expiresAt  DateTime
   verifiedAt DateTime?
+  // A confirmed mobile number, encrypted, until the proof is used (then kept on the account).
+  sealed     String?
 
   @@index([targetHash, createdAt])
 }
@@ -249,12 +260,12 @@ model UserActiveDay {
 // A group a post is in now. A post leaves a group when that group pushes it on (the row is
 // removed and a PostHistory row records the stay); the author's push only adds groups.
 model PostPlacement {
-  id        String   @id @default(uuid())
-  postId    String
-  groupId   String
-  arrivedAt DateTime @default(now())
+  id          String   @id @default(uuid())
+  postId      String
+  groupId     String
+  arrivedAt   DateTime @default(now())
   // "start", "group" (from fromGroupId) or "author": the edges of the author's group map.
-  arrivedBy   String  @default("start")
+  arrivedBy   String   @default("start")
   fromGroupId String?
 
   post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -270,19 +281,19 @@ model Setting {
   key       String   @id
   value     Float
   updatedAt DateTime @updatedAt
-  updatedBy String   // the admin's email address
+  updatedBy String // the admin's email address
 }
 
 // Everything an admin has changed, newest first on the admin page's log.
 model AdminAction {
   id         String   @id @default(uuid())
   at         DateTime @default(now())
-  adminUid   String   // the admin's ProMic (Firebase) uid
+  adminUid   String // the admin's ProMic (Firebase) uid
   adminEmail String
-  action     String   // e.g. "user.suspend", "post.hide", "setting.change"
-  targetType String   // "user", "post", "comment", "chat", "group", "setting", "officer"
+  action     String // e.g. "user.suspend", "post.hide", "setting.change"
+  targetType String // "user", "post", "comment", "chat", "group", "setting", "officer"
   targetId   String
-  detail     String?  // a short description: the reason, the old and new value, …
+  detail     String? // a short description: the reason, the old and new value, …
 
   @@index([at])
 }
@@ -294,16 +305,16 @@ model Report {
   reporterId String
   // Who wrote the reported item.
   authorId   String
-  targetType String    // "post", "comment" or "chat"
+  targetType String // "post", "comment" or "chat"
   targetId   String
-  reason     String    // one of REPORT_REASONS in routes/moderation.ts
+  reason     String // one of REPORT_REASONS in routes/moderation.ts
   detail     String?
   // The text as the reporter saw it (a post's redacted version), kept if the item is removed.
   content    String
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
-  resolution String?   // "removed" or "dismissed"
-  resolvedBy String?   // the admin's email address
+  resolution String? // "removed" or "dismissed"
+  resolvedBy String? // the admin's email address
 
   reporter User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
   author   User @relation("ReportsAgainst", fields: [authorId], references: [id], onDelete: Cascade)
@@ -325,4 +336,23 @@ model Block {
   blocked User @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
 
   @@unique([blockerId, blockedId])
+}
+
+// An officer asking the author of a complaint about the police for the details hidden from
+// officers (routes/common.ts): the exact words, pseudonym and mobile number. Only the author
+// decides; a granted request shows them to that officer alone. Officers are ProMic accounts,
+// so `officerId` is ProMic's le_users id and `branch` what it said at the time.
+model OfficerDetailRequest {
+  id        String    @id @default(uuid())
+  postId    String
+  officerId String
+  branch    String
+  status    String    @default("pending") // "pending", "granted" or "refused"
+  createdAt DateTime  @default(now())
+  decidedAt DateTime?
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, officerId])
+  @@index([postId, status])
 }

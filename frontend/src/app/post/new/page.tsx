@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { posts as postsApi } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
-import { CATEGORIES, CATEGORY_KEYS } from '@/lib/categories';
+import { CATEGORIES, CATEGORY_KEYS, subcategoriesOf } from '@/lib/categories';
 
 const MIN_LENGTH = 20;
 const MAX_LENGTH = 5000;
@@ -14,6 +14,8 @@ export default function NewPostPage() {
   const router = useRouter();
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('');
+  const [subcategory, setSubcategory] = useState('');
+  const subcategories = subcategoriesOf(category);
   // The redacted version of exactly the text in the box; cleared as soon as the text changes.
   const [preview, setPreview] = useState<string | null>(null);
   // Whether that preview had the AI check as well as the patterns.
@@ -49,7 +51,7 @@ export default function NewPostPage() {
     setBusy(true);
     setError(null);
     try {
-      const post = await postsApi.create(content.trim(), category || null, aiChecked);
+      const post = await postsApi.create(content.trim(), category || null, subcategories ? subcategory : null, aiChecked);
       router.push(`/post/${post.id}`);
     } catch (err) {
       const message = (err as Error).message;
@@ -70,7 +72,9 @@ export default function NewPostPage() {
         can read your exact words once, as an image; after that they see the redacted version.
         Others see only your pseudonym, never your username. Once it has reached {pct(rules.listShare)} of the
         groups it is listed on the common page: every member sees the redacted version there,
-        and law-enforcement officers see your exact words as well.
+        and law-enforcement officers see your exact words, your pseudonym and your mobile number as
+        well. If your disclosure is about the police, officers see only the redacted version, and the
+        rest only if you allow an officer who asks.
       </p>
 
       <form onSubmit={handlePreview} className="flex flex-col gap-4">
@@ -81,13 +85,33 @@ export default function NewPostPage() {
           <select
             id="category"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value);
+              setSubcategory('');
+            }}
             className="w-full bg-navy-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent-red"
           >
             <option value="">Choose one…</option>
             {CATEGORY_KEYS.map((key) => <option key={key} value={key}>{CATEGORIES[key]}</option>)}
           </select>
         </div>
+        {subcategories && (
+          <div>
+            <label htmlFor="subcategory" className="block text-xs font-mono text-gray-400 mb-1">
+              Who was it?
+            </label>
+            <select
+              id="subcategory"
+              value={subcategory}
+              required
+              onChange={(e) => setSubcategory(e.target.value)}
+              className="w-full bg-navy-800 border border-gray-700 rounded-lg px-3 py-2 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent-red"
+            >
+              <option value="">Choose one…</option>
+              {Object.entries(subcategories).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+          </div>
+        )}
         <div className="relative">
           <label htmlFor="disclosure" className="sr-only">Your disclosure</label>
           <textarea

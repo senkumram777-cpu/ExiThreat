@@ -1,11 +1,13 @@
 /**
  * Email addresses and mobile numbers: one account per email and per mobile number.
  *
- * Neither is ever stored. The database keeps only a fingerprint, a keyed one-way hash
- * (HMAC-SHA256 with CONTACT_HASH_SECRET) of the normalised value. That is enough to refuse a
- * second sign-up, to sign in, and to find the account for a password reset, but the address
- * or number cannot be read back from it. Losing or changing CONTACT_HASH_SECRET makes every
- * stored fingerprint useless, so it must never change once accounts exist.
+ * Both are looked up by a fingerprint, a keyed one-way hash (HMAC-SHA256 with
+ * CONTACT_HASH_SECRET) of the normalised value. That is enough to refuse a second sign-up, to
+ * sign in, and to find the account for a password reset. Email addresses are never stored.
+ * Mobile numbers are also kept encrypted (`sealContact`: AES-256-GCM, with a key derived from
+ * the same secret), only so that law-enforcement officers can be given a member's number
+ * (routes/common.ts). Losing or changing CONTACT_HASH_SECRET makes every stored fingerprint
+ * and encrypted number useless, so it must never change once accounts exist.
  *
  * Owning an address or number is proved with a 6-digit code. Email codes are made and sent
  * here; mobile numbers are confirmed by Firebase Phone Authentication in the browser and
@@ -17,9 +19,11 @@ import crypto from 'crypto';
 import { prisma } from '../index';
 import { DeliveryUnavailable, sendEmailCode } from './delivery';
 import { Channel, normalize } from './contactFormat';
+import { CONTACT_SECRET, sealContact } from './contactSeal';
 
 export type { Channel } from './contactFormat';
 export { normalize, normalizeEmail, normalizePhone } from './contactFormat';
+export { openContact, sealContact } from './contactSeal';
 
 const CODE_TTL_MS = 10 * 60 * 1000;
 const MAX_WRONG_CODES = 5;
@@ -29,25 +33,7 @@ const MAX_SENDS_PER_DAY = 5;
 const PROOF_TTL_MS = 30 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const hosted = process.env.NODE_ENV === 'production' || !!process.env.FLY_APP_NAME;
-
-/**
- * The fingerprint key. A hosted server without a proper one cannot take sign-ups or contact
- * details (the endpoints answer 503) but still starts, so that existing accounts' sessions
- * and the rest of the site keep working while it is being set up.
- */
-function readSecret(): string | null {
-  const secret = process.env.CONTACT_HASH_SECRET ?? '';
-  if (secret.length >= 32 && !secret.includes('change-me')) return secret;
-  if (hosted) {
-    console.error('CONTACT_HASH_SECRET is missing or shorter than 32 characters: sign-up is off.');
-    return null;
-  }
-  console.warn('CONTACT_HASH_SECRET is not set: using a fixed value. Fine on this computer only.');
-  return 'local-development-contact-secret-not-for-hosting';
-}
-
-const SECRET = readSecret();
+const SECRET = CONTACT_SECRET;
 
 export class ContactError extends Error {
   constructor(public status: number, message: string) {
@@ -134,6 +120,7 @@ export async function recordPhoneProof(normalized: string): Promise<string> {
     data: {
       channel: 'phone',
       targetHash: fingerprint('phone', normalized),
+      sealed: sealContact(normalized),
       codeHash: 'firebase',
       expiresAt: new Date(now + PROOF_TTL_MS),
       verifiedAt: new Date(now),
@@ -184,6 +171,14 @@ export async function proofOf(channel: Channel, verificationId: unknown): Promis
     throw new ContactError(410, `Your ${CHANNEL_NAMES[channel]} was confirmed too long ago. Confirm it again.`);
   }
   return record.targetHash;
+}
+
+/** The encrypted number a confirmed mobile proof carries (call after `proofOf`), or null. */
+export async function sealedProof(verificationId: unknown): Promise<string | null> {
+  if (typeof verificationId !== 'string' || !verificationId) return null;
+  const record = await prisma.contactVerification.findUnique({ where: { id: verificationId }, select: { sealed: true } })
+    .catch(() => null);
+  return record?.sealed ?? null;
 }
 
 export async function consumeProofs(...ids: Array<string | undefined>): Promise<void> {

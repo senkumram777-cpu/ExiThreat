@@ -38,8 +38,11 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   preview or prefetch cannot use it up. Both clients show a "Read now" step before fetching it.
 - Common page: `services/spread.ts` (pure, unit-tested) and `spreadService.ts` store
   `reachedGroups`, `eligibleGroups`, `spreadScore` and `listedAt` on each post, after every
-  push and hourly; `routes/common.ts` lists them. Officers get the original as well, after
-  `services/officerAuth.ts` checks their ProMic session with ProMic's `leWhoAmI`.
+  push and hourly; `routes/common.ts` lists them. Officers get the original, the pseudonym and
+  the mobile number as well, after `services/officerAuth.ts` checks their ProMic session with
+  ProMic's `leWhoAmI`, except on a complaint about the police (`services/policeComplaint.ts`:
+  the second choice "Police or law enforcement", or the words mention the police in any of six
+  languages): redacted only, until the author allows that officer (`OfficerDetailRequest`).
 - Local test builds use Next's `output: 'standalone'`, which leaves a link
   `.next/standalone/node_modules` into the real packages. Remove that link first
   (`cmd //c "rmdir .next\standalone\node_modules"`), then `.next`; `rm -rf .next` from Git
@@ -53,9 +56,10 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   `memberWeight.ts`, stored by `memberWeightService.ts`, which reuses `reviewCounts` from
   `groupWeightService.ts`. Time on the site comes from `ActivityHeartbeat.tsx` →
   `POST /auth/heartbeat` (`UserActiveDay.seconds`). Never send it to anyone but its owner.
-- Accounts: one per email address and per mobile number, stored only as HMAC fingerprints
+- Accounts: one per email address and per mobile number, matched by HMAC fingerprints
   (`backend/src/services/contactService.ts`, key `CONTACT_HASH_SECRET`, which must never
-  change). Email codes go out from Gmail (`services/delivery.ts`); without keys and off the
+  change). The mobile number is also kept encrypted for officers (`User.phoneSealed`,
+  `services/contactSeal.ts`, key derived from the same secret); the email address never is. Email codes go out from Gmail (`services/delivery.ts`); without keys and off the
   host they are printed as `[local code] email <id> <code>`, which the API test reads. Mobile
   numbers are confirmed by Firebase Phone Auth on ProMic's project in the browser
   (`frontend/src/lib/firebasePhone.ts`) and checked in `services/phoneVerification.ts`; off the

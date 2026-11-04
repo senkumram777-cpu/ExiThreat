@@ -44,9 +44,13 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
    (see [How codes are sent](#how-codes-are-sent)). **Each email address and each mobile number can
    have only one account**: a second sign-up with either is refused, also when it is written
    differently (capitals, `+tags`, dots in Gmail addresses, `+91`/`0` prefixes and spaces).
-   Neither is stored: the database keeps only a keyed one-way fingerprint of each
-   (`backend/src/services/contactService.ts`), so they can be matched but not read back. They
-   cannot be changed once set.
+   Both are matched by a keyed one-way fingerprint (`backend/src/services/contactService.ts`).
+   The email address itself is never stored. The mobile number is also kept encrypted
+   (`User.phoneSealed`, AES-256-GCM with a key derived from `CONTACT_HASH_SECRET`,
+   `services/contactSeal.ts`), only so that officers can be given it on the common page
+   (see [ProMic: law enforcement](#promic-law-enforcement-law-enforcement)). Accounts made before this get it
+   the next time they sign in or reset their password with their mobile number. Neither can be
+   changed once set.
    - Sign in with the username, the email address or the mobile number. Passwords are hashed
      with bcrypt, and sign-in returns a token valid for 7 days.
    - "Forgot password?" sends a code to the account's email or mobile and sets a new password;
@@ -169,8 +173,10 @@ Current work is on the branch `feature/promic-backups`; the hosted site is deplo
     there; afterwards it is recalculated after every push and hourly, so a post rises while it
     keeps spreading quickly and falls as it slows or ages. Each entry shows the author's
     pseudonym, how many groups it has reached, how long it took to reach 20%, and its score.
-    Every registered member sees the redacted version only. Officers see both the original
-    and the redacted version (next section). Both can list one type of threat at a time.
+    Every registered member sees the redacted version only. Officers also see the original, the
+    author's pseudonym and mobile number, except on a complaint about the police (next section).
+    Both can list one type of threat at a time. The type "Police or government official" has a
+    second choice when posting: "Police or law enforcement" or "Other government official".
 13. **Terms, reporting and blocking.** Signing up needs agreeing to the terms of use (`/terms`);
     an account made before there were terms can read but not post, comment or chat until it
     agrees (the server answers 403 `code: "TERMS_REQUIRED"`, and the website and app open the
@@ -249,7 +255,9 @@ answered 403 with `code: "TERMS_REQUIRED"` when it posts, comments or chats.
 | `POST /posts/preview`, `POST /posts/warm`, `GET /posts/mine` | The redacted version of a text before it is posted, with `aiChecked`; wake the AI redactor; the caller's own posts |
 | `GET /posts/:id/map` | Author only: every group by name and weight, which it covered in this round, passed through and is in now, the path between them, and the round |
 | `GET /common?offset=&category=` | The common page, 30 at a time: redacted versions, by pseudonym (members); `category` keeps one type of threat |
-| `GET /common/officer?offset=&category=` | The same with the original versions, for an officer's ProMic session token |
+| `GET /common/officer?offset=&category=` | The same for an officer's ProMic session token, with the original, pseudonym and `contactNumber`; a complaint about the police has `protected: true`, the redacted version only, and `request` (this officer's) |
+| `POST /common/officer/:postId/request` | An officer asks the author of a complaint about the police for its details (once; a refusal stands) |
+| `POST /posts/:id/officer-requests/:requestId` | The author answers it: `{ allow: true \| false }` (a yes can be taken back). Requests come with `GET /posts/mine` |
 | `GET /posts/:id/comments`, `POST /posts/:id/comments` | Comments |
 | `POST /push/:postId/vote`, `DELETE /push/:postId/vote`, `POST /push/:postId/manual`, `GET /push/:postId/status` | Voting and manual push |
 | `GET /weightage/:postId`, `POST /weightage/:postId/recalculate` | Weightage |
@@ -260,8 +268,9 @@ answered 403 with `code: "TERMS_REQUIRED"` when it posts, comments or chats.
 
 ### Database
 
-`User` (with the `emailHash` and `phoneHash` fingerprints), `ContactVerification` (codes and
-confirmations, kept for a day at most), `Group`, `GroupMember`, `Post`, `PostPlacement` (the
+`User` (with the `emailHash` and `phoneHash` fingerprints and the encrypted `phoneSealed`),
+`ContactVerification` (codes and confirmations, kept for a day at most), `OfficerDetailRequest`
+(an officer's request for a complaint's details, and the author's answer), `Group`, `GroupMember`, `Post`, `PostPlacement` (the
 groups a post is in now, with when it arrived), `PushVote` (per post and group),
 `PostHistory` (groups a post has left: arrival, departure, vote share), `Comment`, `ViewRecord` (first looks, and when the redacted version was
 shown), `UserActiveDay` (days of use and time on the site, kept 60 days), `ChatMessage`, `ProMicLink`,
@@ -318,10 +327,22 @@ receive the credentials by email. This page talks directly to ProMic's backend (
 in the ProMic repository, `functions/le.js`), and officers have no access to groups or chat.
 
 The one thing an officer reads from ExiThreat's own API is the **common page** ("ExiThreat
-Common Page" on the officer page, `components/CommonFeed.tsx`): every listed post with both its
-original and its redacted version, by pseudonym. `GET /common/officer` takes the officer's
-ProMic session token and asks ProMic's `leWhoAmI` whose it is (`services/officerAuth.ts`,
-remembered for 5 minutes), so the session secret stays in ProMic.
+Common Page" on the officer page, `components/CommonFeed.tsx`): every listed post with its
+original and redacted versions, the author's pseudonym and mobile number ("not on record" for an
+account that has none kept yet). `GET /common/officer` takes the officer's ProMic session token
+and asks ProMic's `leWhoAmI` whose it is (`services/officerAuth.ts`, remembered for 5 minutes),
+so the session secret stays in ProMic.
+
+**Complaints about the police** are the exception (`services/policeComplaint.ts`). A post is one
+when its author chose "Police or law enforcement", or when its own words mention the police,
+whatever type was chosen: a word list in English (and Indian words in English letters), Hindi,
+Tamil, Telugu, Kannada and Malayalam. No AI is involved, so it costs nothing to run. It errs on
+the side of the author: a post that only says the author went to the police is protected too.
+On these, officers get only the redacted version, without the pseudonym or mobile number, and an
+**Ask the author** button. The author sees the request on My Disclosures (with the officer's
+branch, never the officer) and a notice on the home page, and allows or refuses each officer.
+Allowing shows that officer alone the exact words, pseudonym and number; the author can take a
+yes back, and a refusal stands. Members' views are unchanged.
 
 Files: `frontend/src/app/law-enforcement/page.tsx` (sign in and recording access),
 `AreaDashboard.tsx` (map, alerts, live list), `liveAudio.ts` (live playback).
@@ -427,7 +448,7 @@ Backend (`backend/.env`, not in git):
 | `PROMIC_SERVICE_ACCOUNT_PATH` or `PROMIC_SERVICE_ACCOUNT_JSON` | ProMic service-account key: ProMic backups, and checking mobile confirmations. Never commit it |
 | `GROUP_MIN_MEMBERS`, `GROUP_MAX_MEMBERS` | Group sizes (optional; 5 and 25). Defaults only: an admin can change them on the admin page |
 | `PROMIC_LE_URL` | ProMic's law-enforcement endpoints, for checking officers on the common page. Has a built-in default |
-| `CONTACT_HASH_SECRET` | Key for the email and mobile fingerprints, at least 32 characters. **Never change or lose it**: every stored fingerprint would stop matching. Without it a hosted server takes no sign-ups |
+| `CONTACT_HASH_SECRET` | Key for the email and mobile fingerprints, and (derived from it) for the encrypted mobile numbers, at least 32 characters. **Never change or lose it**: every stored fingerprint would stop matching and every kept number could no longer be read. Without it a hosted server takes no sign-ups |
 | `GMAIL_USER`, `GMAIL_APP_PASSWORD` | Gmail account and app password that send the email codes |
 | `REGISTER_LIMIT_PER_DAY`, `CODE_SENDS_PER_HOUR`, `LOGIN_ATTEMPTS` | Accounts per network address a day, codes asked for per address an hour, wrong passwords per 15 minutes (optional; 20, 20 and 10) |
 
@@ -508,9 +529,14 @@ These public servers are meant for light use.
   email addresses and mobile numbers of their own; extra email addresses are easy to get,
   extra SIM cards less so.
 - The email address passes through Gmail, and the mobile number through Google's Firebase,
-  to deliver the codes; both keep their own logs. ExiThreat itself keeps only fingerprints;
-  with `CONTACT_HASH_SECRET`, anyone holding the database could still check whether a
-  particular address or number has an account.
+  to deliver the codes; both keep their own logs. ExiThreat keeps fingerprints of both, and the
+  mobile number encrypted for officers. Anyone holding both the database and
+  `CONTACT_HASH_SECRET` could read every member's mobile number and check whether a particular
+  address has an account.
+- A complaint about the police is found by its words, so a misspelling meant to dodge the list
+  ("p0lice") is not caught; the author can still choose "Police or law enforcement". An officer
+  who also has a member account sees authors' pseudonyms on the common page, as every member
+  does, and could match one to the author's other, unprotected posts.
 - For a trial with only a few accounts, lower `GROUP_MIN_MEMBERS` on the backend
   (`fly secrets set` or `[env]` in `backend/fly.toml`). Smaller groups are easier to fill
   with one person's accounts, so put it back before real use.
