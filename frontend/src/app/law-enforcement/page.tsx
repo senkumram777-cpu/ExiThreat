@@ -369,6 +369,10 @@ export default function LawEnforcementPage() {
     (offset: number, category: string) => common.officerList(sessionToken ?? '', offset, category),
     [sessionToken],
   );
+  const loadTop = useCallback(
+    (offset: number, category: string) => common.officerList(sessionToken ?? '', offset, category, 'top'),
+    [sessionToken],
+  );
   const askAuthor = useCallback((postId: string) => common.askAuthor(sessionToken ?? '', postId), [sessionToken]);
 
   const onDashboardSessionEnded = useCallback(() => {
@@ -429,6 +433,19 @@ export default function LawEnforcementPage() {
             number. A complaint about the police shows the redacted version only: ask its author for the rest.
           </p>
           <CommonFeed load={loadCommon} officer askAuthor={askAuthor} onUnauthorized={onDashboardSessionEnded} />
+        </details>
+      )}
+
+      {step === 'host' && session && (
+        <details className="mb-6 p-4 bg-navy-800 rounded-xl border border-gray-800">
+          <summary className="font-mono font-bold text-sm text-accent-teal cursor-pointer">
+            ExiThreat Top Posts
+          </summary>
+          <p className={`${introClass} mt-3 mb-4`}>
+            Disclosures that have reached at least {pct(rules.topShare)} of ExiThreat&apos;s groups, the most weight
+            first (at equal weight, the latest to reach {pct(rules.topShare)}), shown as on the common page.
+          </p>
+          <CommonFeed load={loadTop} view="top" officer askAuthor={askAuthor} onUnauthorized={onDashboardSessionEnded} />
         </details>
       )}
 

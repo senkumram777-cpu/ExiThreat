@@ -105,7 +105,7 @@ export interface PostJourney {
   arrivedAt: string;
 }
 
-/** A post on the common page: it has reached 20% of the groups. */
+/** A post on the common page (it has reached 20% of the groups) or the top posts page (40%). */
 export interface CommonPost {
   id: string;
   /** Its place in the list, 1 first. */
@@ -131,10 +131,15 @@ export interface CommonPost {
   listedAt: string;
   /** How long it took to reach 20% of the groups. */
   listedAfterMs: number;
+  /** When it reached 40% of the groups and went on the top posts page; null if it has not. */
+  topListedAt: string | null;
+  /** How long it took to reach 40% of the groups; null if it has not. */
+  topListedAfterMs: number | null;
   reachedGroups: number;
   eligibleGroups: number;
-  /** Share of the groups reached per day since it was posted; the list is ordered by it. */
+  /** Share of the groups reached per day since it was posted; the common page is ordered by it. */
   spreadScore: number;
+  /** The top posts page is ordered by it, heaviest first. */
   totalWeight: number;
 }
 
@@ -530,12 +535,21 @@ function categoryParam(category: string): string {
   return category ? `&category=${encodeURIComponent(category)}` : '';
 }
 
+/** Which list: the common page or the top posts page. */
+export type CommonView = 'common' | 'top';
+
+const viewPath = (view: CommonView) => (view === 'top' ? '/top' : '');
+
 export const common = {
-  /** The common page, 30 posts from `offset`; only one type of threat when `category` is set. */
-  list: (offset = 0, category = '') => req<CommonPage>('GET', `/common?offset=${offset}${categoryParam(category)}`),
+  /**
+   * The common page (or the top posts page, `view` "top"), 30 posts from `offset`; only one type
+   * of threat when `category` is set.
+   */
+  list: (offset = 0, category = '', view: CommonView = 'common') =>
+    req<CommonPage>('GET', `/common${viewPath(view)}?offset=${offset}${categoryParam(category)}`),
   /** The same for an officer, with the original versions; `token` is their ProMic session. */
-  officerList: async (token: string, offset = 0, category = ''): Promise<CommonPage> => {
-    const res = await fetch(`${BASE}/common/officer?offset=${offset}${categoryParam(category)}`, { headers: { Authorization: `Bearer ${token}` } });
+  officerList: async (token: string, offset = 0, category = '', view: CommonView = 'common'): Promise<CommonPage> => {
+    const res = await fetch(`${BASE}/common/officer${viewPath(view)}?offset=${offset}${categoryParam(category)}`, { headers: { Authorization: `Bearer ${token}` } });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(res.status === 401 ? 'Sign in again.' : data.error ?? `Request failed (${res.status})`);
     return data as CommonPage;

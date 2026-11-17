@@ -9,9 +9,14 @@
  * - Spread score: the share per day since it was posted. Before 20% that is how fast it is
  *   getting there; afterwards it keeps rising while the post spreads quickly and falls as it
  *   slows or ages. The common page is ordered by it, highest first.
+ * - Top posts: the first time a listed post's share reaches the top share (40% unless an admin
+ *   changed it, never below the listing share), it goes on the top posts page, and stays. That
+ *   page is ordered by the post's total weight, then by when it reached the top share, latest
+ *   first.
  */
 
 export const LIST_SHARE = 0.2;
+export const TOP_SHARE = 0.4;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Ages under an hour count as an hour, so that a brand-new post does not score without limit. */

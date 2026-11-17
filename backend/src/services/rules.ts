@@ -31,6 +31,11 @@ export const RULES = {
     help: 'A post goes on the common page once it has reached this share of the groups that can take it. Posts already on the page stay.',
     unit: 'share', min: 0.05, max: 1, default: 0.2,
   },
+  topShare: {
+    label: 'Top posts page: groups reached',
+    help: 'A post on the common page also goes on the top posts page, ordered by weight, once it has reached this share of the groups that can take it. Posts already on the page stay.',
+    unit: 'share', min: 0.05, max: 1, default: 0.4,
+  },
   maxGroupsAtOnce: {
     label: 'Most groups a post is in at once',
     help: 'Pushes place a post in at most this many groups at the same time.',
@@ -66,8 +71,8 @@ export function isRuleKey(key: string): key is RuleKey {
 
 /**
  * Why `value` cannot be used for `key` given the other rules' values, or null if it can.
- * Counts and hours must be whole numbers, a switch 0 or 1, and the smallest group no larger
- * than the largest.
+ * Counts and hours must be whole numbers, a switch 0 or 1, the smallest group no larger
+ * than the largest, and the top posts page's share no lower than the common page's.
  */
 export function ruleError(key: RuleKey, value: number, others: Record<RuleKey, number>): string | null {
   const def: RuleDef = RULES[key];
@@ -76,5 +81,7 @@ export function ruleError(key: RuleKey, value: number, others: Record<RuleKey, n
   if (def.unit !== 'share' && !Number.isInteger(value)) return 'Must be a whole number.';
   if (key === 'groupMinMembers' && value > others.groupMaxMembers) return 'Cannot be more than the largest group.';
   if (key === 'groupMaxMembers' && value < others.groupMinMembers) return 'Cannot be less than the smallest group that takes posts.';
+  if (key === 'listShare' && value > others.topShare) return 'Cannot be more than the top posts page share.';
+  if (key === 'topShare' && value < others.listShare) return 'Cannot be less than the common page share.';
   return null;
 }

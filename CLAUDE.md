@@ -38,7 +38,13 @@ PWA with a Next.js frontend and an Express + PostgreSQL backend.
   preview or prefetch cannot use it up. Both clients show a "Read now" step before fetching it.
 - Common page: `services/spread.ts` (pure, unit-tested) and `spreadService.ts` store
   `reachedGroups`, `eligibleGroups`, `spreadScore` and `listedAt` on each post, after every
-  push and hourly; `routes/common.ts` lists them. Officers get the original, the pseudonym and
+  push and hourly; `routes/common.ts` lists them.
+- Top posts page (`/top`, `GET /common/top`, officers `GET /common/officer/top`, app tab "Top"):
+  posts on the common page that have also reached the `topShare` rule (40%, never below
+  `listShare`), stamped once in `Post.topListedAt` by `spreadService.ts` and kept. Ordered by
+  `totalWeight`, then `topListedAt` latest first. Same fields as the common page plus
+  `topListedAt` / `topListedAfterMs`; same blocking, hiding and unlisting.
+- On both pages, officers get the original, the pseudonym and
   the mobile number as well, after `services/officerAuth.ts` checks their ProMic session with
   ProMic's `leWhoAmI`, except on a complaint about the police (`services/policeComplaint.ts`:
   the second choice "Police or law enforcement", or the words mention the police in any of six
@@ -100,7 +106,7 @@ A native Android app for members lives in its own repository,
 `C:\Users\SenthilKumarRamakris\AndroidStudioProjects\ExiThreatApp`
 (https://github.com/senkumram777-cpu/ExiThreatApp; Kotlin, Jetpack Compose, Retrofit). It has
 the website's member pages (sign-up and sign-in, groups and chat, posts with the first look,
-votes and manual push, comments, Mine and the map, the common page, account, ProMic backups);
+votes and manual push, comments, Mine and the map, the common page, top posts, account, ProMic backups);
 officers and admins use the website only. It calls this API directly
 (`https://exithreat-api.fly.dev/api`), so the API is a contract with it:
 

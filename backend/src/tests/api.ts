@@ -662,6 +662,35 @@ async function run(): Promise<void> {
       && listedSpread?.originalContent === undefined && !JSON.stringify(r.data).includes(u1.username)
       && typeof listedSpread?.listedAfterMs === 'number', listedSpread);
   check('nobody signed out sees it', (await call('GET', '/common')).status === 401);
+
+  // ── the top posts page: 40% of the groups, heaviest first ──
+  const tops = await prisma.post.findMany({ select: { listedAt: true, topListedAt: true, reachedGroups: true, eligibleGroups: true } });
+  check('no post is on the top posts page before it reaches 40%, or without being on the common page',
+    tops.every((p) => p.topListedAt === null || (p.listedAt !== null && p.reachedGroups / p.eligibleGroups >= 0.4)), tops);
+  const saved = await prisma.post.findMany({ where: { id: { in: [spreadId, cycleId] } }, select: { id: true, totalWeight: true, topListedAt: true } });
+  // The cycle post reached 40% when it was listed, the spread post now. Other posts may be on the
+  // page too; only these two (and the quiet one, which is not on the common page) are compared.
+  const cycleListedAt = (await prisma.post.findUniqueOrThrow({ where: { id: cycleId } })).listedAt!;
+  await prisma.post.update({ where: { id: spreadId }, data: { topListedAt: new Date(), totalWeight: 1 } });
+  await prisma.post.update({ where: { id: cycleId }, data: { topListedAt: cycleListedAt, totalWeight: 5 } });
+  await prisma.post.update({ where: { id: quiet.id }, data: { topListedAt: new Date(), totalWeight: 9 } });
+  const ours = (ids: string[]) => ids.filter((id) => id === spreadId || id === cycleId || id === quiet.id);
+  const topIds = async (token: string, path = '/common/top') =>
+    ours(((await call('GET', path, token)).data.posts ?? []).map((p: { id: string }) => p.id));
+  r = await call('GET', '/common/top', newcomer.token);
+  const topCycle = r.data.posts?.find((p: { id: string }) => p.id === cycleId);
+  check('every member sees the top posts page, heaviest first',
+    r.status === 200 && JSON.stringify(ours(r.data.posts.map((p: { id: string }) => p.id))) === JSON.stringify([cycleId, spreadId])
+      && topCycle?.rank < r.data.posts.find((p: { id: string }) => p.id === spreadId)?.rank && topCycle?.author === u1Me.pseudonym && topCycle?.originalContent === undefined
+      && typeof topCycle?.topListedAfterMs === 'number', r.data);
+  await prisma.post.update({ where: { id: spreadId }, data: { totalWeight: 5 } });
+  check('at equal weight, the one that reached 40% most recently goes first',
+    JSON.stringify(await topIds(newcomer.token)) === JSON.stringify([spreadId, cycleId]));
+  check('officers see it too, and nobody signed out',
+    JSON.stringify(await topIds('test-officer:officer-1', '/common/officer/top')) === JSON.stringify([spreadId, cycleId])
+      && (await call('GET', '/common/top')).status === 401 && (await call('GET', '/common/officer/top', u1.token)).status === 401);
+  for (const p of saved) await prisma.post.update({ where: { id: p.id }, data: { totalWeight: p.totalWeight, topListedAt: p.topListedAt } });
+  await prisma.post.update({ where: { id: quiet.id }, data: { topListedAt: null, totalWeight: 0 } });
   r = await call('GET', '/common/officer', 'test-officer:officer-1');
   const officerSpread = r.data.posts?.find((p: { id: string }) => p.id === spreadId);
   check('an officer sees both versions', r.status === 200 && officerSpread?.originalContent === spreadPost.originalContent

@@ -31,7 +31,7 @@ async function common(): Promise<Common> {
 }
 
 async function store(
-  post: { id: string; ocUserId: string; createdAt: Date; listedAt: Date | null },
+  post: { id: string; ocUserId: string; createdAt: Date; listedAt: Date | null; topListedAt: Date | null },
   reachedIds: string[],
   { big, groupsOf }: Common,
   now: Date,
@@ -41,6 +41,7 @@ async function store(
   const eligibleSet = new Set(eligible);
   const reached = new Set(reachedIds.filter((id) => eligibleSet.has(id))).size;
   const share = shareOf(reached, eligible.length);
+  const listed = post.listedAt !== null || reachesList(share, rule('listShare'));
   await prisma.post.update({
     where: { id: post.id },
     data: {
@@ -49,12 +50,14 @@ async function store(
       spreadScore: spreadScoreOf(share, now.getTime() - post.createdAt.getTime()),
       spreadUpdatedAt: now,
       // Once listed, always listed: only its place in the list changes.
-      ...(!post.listedAt && reachesList(share, rule('listShare')) ? { listedAt: now } : {}),
+      ...(!post.listedAt && listed ? { listedAt: now } : {}),
+      // The same for the top posts page, which takes only posts on the common page.
+      ...(!post.topListedAt && listed && reachesList(share, rule('topShare')) ? { topListedAt: now } : {}),
     },
   });
 }
 
-const POST_FIELDS = { id: true, ocUserId: true, createdAt: true, listedAt: true } as const;
+const POST_FIELDS = { id: true, ocUserId: true, createdAt: true, listedAt: true, topListedAt: true } as const;
 
 export async function recalculateSpread(postId: string): Promise<void> {
   const [post, history, placements, shared] = await Promise.all([

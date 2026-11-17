@@ -116,6 +116,9 @@ model Post {
   spreadScore      Float     @default(0)
   spreadUpdatedAt  DateTime?
   listedAt         DateTime?
+  // Listed on the top posts page once it reached 40% (the first time; it stays). That page is
+  // ordered by totalWeight, then by this, latest first.
+  topListedAt      DateTime?
   // Set by an admin: a hidden post is shown to no one but its author and admins, cannot be
   // voted on or pushed, and leaves the common page. An unlisted one only leaves the common page.
   hiddenAt         DateTime?
@@ -133,6 +136,7 @@ model Post {
 
   @@index([ocUserId])
   @@index([listedAt, spreadScore])
+  @@index([topListedAt, totalWeight])
 }
 
 // Tracks each vote cast on a post within a specific group

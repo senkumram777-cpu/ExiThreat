@@ -14,7 +14,7 @@ import { normalizeEmail, normalizePhone } from '../services/contactFormat';
 import { groupWeightOf, indiaDay, loginScoreOf } from '../services/groupWeight';
 import { activityScoreOf, memberWeightOf, postScoreOf } from '../services/memberWeight';
 import { chooseDestinations, chooseInCycle, reachFor } from '../services/forwarding';
-import { LIST_SHARE, reachesList, shareOf, spreadScoreOf } from '../services/spread';
+import { LIST_SHARE, TOP_SHARE, reachesList, shareOf, spreadScoreOf } from '../services/spread';
 import { PSEUDONYM_PATTERN, randomPseudonym } from '../services/pseudonym';
 import { buildGroupMap } from '../services/groupMap';
 import { RULES, ruleError } from '../services/rules';
@@ -339,6 +339,9 @@ test('spread: share, listing at 20%, score per day', () => {
   assert.ok(!reachesList(shareOf(1, 6)));
   // An admin can change the share.
   assert.ok(reachesList(0.1, 0.1) && !reachesList(0.1, 0.15));
+  // The top posts page: 40%.
+  assert.equal(TOP_SHARE, 0.4);
+  assert.ok(reachesList(shareOf(2, 5), TOP_SHARE) && !reachesList(shareOf(2, 6), TOP_SHARE));
   const day = 24 * 3600_000;
   // 20% in one day is 0.2 a day; the same share in two days scores half.
   assert.equal(spreadScoreOf(0.2, day), 0.2);
@@ -367,6 +370,10 @@ test('rules: limits, whole numbers, and the smallest group no larger than the la
   assert.equal(ruleError('registrationOpen', 0, values), null);
   assert.notEqual(ruleError('groupMinMembers', values.groupMaxMembers + 1, values), null);
   assert.notEqual(ruleError('groupMaxMembers', values.groupMinMembers - 1, values), null);
+  // The top posts page never takes posts below the common page's share.
+  assert.equal(ruleError('topShare', values.listShare, values), null);
+  assert.notEqual(ruleError('topShare', values.listShare - 0.05, values), null);
+  assert.notEqual(ruleError('listShare', values.topShare + 0.05, values), null);
 });
 
 test('police complaints: words that mention the police, in each language', async () => {

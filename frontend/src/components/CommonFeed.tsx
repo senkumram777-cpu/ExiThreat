@@ -1,17 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { CommonPage, CommonPost, OfficerRequestStatus } from '@/lib/api';
+import type { CommonPage, CommonPost, CommonView, OfficerRequestStatus } from '@/lib/api';
 import { pct, useRules } from '@/lib/rules';
-import { groupsPerDay } from '@/lib/weight';
+import { backedBy, groupsPerDay } from '@/lib/weight';
 import ReportBlock from './ReportBlock';
 import CategoryTag from './CategoryTag';
 import { CATEGORIES, CATEGORY_KEYS } from '@/lib/categories';
 
 /**
  * The common page's list: posts that have reached the listing share of the groups (20% unless an
- * admin changed it), fastest spreading first,
- * each tagged with its author's pseudonym. Members get the redacted version; officers
+ * admin changed it), fastest spreading first; or, with `view` "top", the top posts page's: those
+ * that have reached the top share (40%), heaviest first, at equal weight the latest to reach it.
+ * Each is tagged with its author's pseudonym. Members get the redacted version; officers
  * (`officer`) the original and the author's mobile number as well, except on a complaint about the
  * police: there they get the redacted version only, and can ask the author for the rest
  * (`askAuthor`). `load` fetches one page from an offset, of one type of threat when one is chosen
@@ -73,10 +74,11 @@ function Withheld({ post, askAuthor }: { post: CommonPost; askAuthor?: (postId: 
   );
 }
 
-function PostCard({ post, officer, listShare, onBlocked, askAuthor }: {
-  post: CommonPost; officer: boolean; listShare: number; onBlocked: (author: string) => void;
+function PostCard({ post, view, officer, listShare, onBlocked, askAuthor }: {
+  post: CommonPost; view: CommonView; officer: boolean; listShare: number; onBlocked: (author: string) => void;
   askAuthor?: (postId: string) => Promise<OfficerRequestStatus>;
 }) {
+  const top = view === 'top';
   const share = post.eligibleGroups > 0 ? Math.round((post.reachedGroups / post.eligibleGroups) * 100) : 0;
   return (
     <article className="p-4 bg-navy-800 rounded-xl border border-gray-800 flex flex-col gap-3">
@@ -122,13 +124,20 @@ function PostCard({ post, officer, listShare, onBlocked, askAuthor }: {
           <div className="text-[11px] text-gray-500">of groups ({post.reachedGroups}/{post.eligibleGroups})</div>
         </div>
         <div>
-          <div className="text-sm font-bold text-gray-200">{duration(post.listedAfterMs)}</div>
+          <div className="text-sm font-bold text-gray-200">{duration((top ? post.topListedAfterMs : null) ?? post.listedAfterMs)}</div>
           <div className="text-[11px] text-gray-500">to reach {pct(listShare)}</div>
         </div>
-        <div>
-          <div className="text-sm font-bold text-gray-200">{groupsPerDay(post.spreadScore, post.eligibleGroups)}</div>
-          <div className="text-[11px] text-gray-500">spreading</div>
-        </div>
+        {top ? (
+          <div>
+            <div className="text-sm font-bold text-gray-200">{backedBy(post.totalWeight)}</div>
+            <div className="text-[11px] text-gray-500">weight</div>
+          </div>
+        ) : (
+          <div>
+            <div className="text-sm font-bold text-gray-200">{groupsPerDay(post.spreadScore, post.eligibleGroups)}</div>
+            <div className="text-[11px] text-gray-500">spreading</div>
+          </div>
+        )}
       </div>
     </article>
   );
@@ -136,11 +145,14 @@ function PostCard({ post, officer, listShare, onBlocked, askAuthor }: {
 
 export default function CommonFeed({
   load,
+  view = 'common',
   officer = false,
   onUnauthorized,
   askAuthor,
 }: {
   load: (offset: number, category: string) => Promise<CommonPage>;
+  /** Which list `load` fetches: decides what each post shows and the share it mentions. */
+  view?: CommonView;
   officer?: boolean;
   onUnauthorized?: () => void;
   /** Officers only: asks the author of a complaint about the police for its details. */
@@ -152,6 +164,7 @@ export default function CommonFeed({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [category, setCategory] = useState('');
+  const share = view === 'top' ? rules.topShare : rules.listShare;
 
   const fetchFrom = useCallback(async (offset: number) => {
     try {
@@ -173,9 +186,9 @@ export default function CommonFeed({
 
   const filter = (
     <div className="flex items-center gap-2">
-      <label htmlFor="common-category" className="text-xs font-mono text-gray-500 shrink-0">Type of threat</label>
+      <label htmlFor={`${view}-category`} className="text-xs font-mono text-gray-500 shrink-0">Type of threat</label>
       <select
-        id="common-category"
+        id={`${view}-category`}
         value={category}
         onChange={(e) => setCategory(e.target.value)}
         className="min-w-0 flex-1 bg-navy-800 border border-gray-700 rounded-lg px-2 py-1.5 font-mono text-xs text-gray-200 focus:outline-none focus:border-accent-teal"
@@ -201,8 +214,8 @@ export default function CommonFeed({
         {filter}
         <p className="text-sm font-mono text-gray-500 text-center py-8">
           {category
-            ? `No post of this type has reached ${pct(rules.listShare)} of the groups yet.`
-            : `No post has reached ${pct(rules.listShare)} of the groups yet.`}
+            ? `No post of this type has reached ${pct(share)} of the groups yet.`
+            : `No post has reached ${pct(share)} of the groups yet.`}
         </p>
       </div>
     );
@@ -215,9 +228,10 @@ export default function CommonFeed({
         <PostCard
           key={post.id}
           post={post}
+          view={view}
           officer={officer}
           askAuthor={askAuthor}
-          listShare={rules.listShare}
+          listShare={share}
           // A blocked member's posts leave the page; the server leaves them out from now on.
           onBlocked={() => { void fetchFrom(0); }}
         />

@@ -66,6 +66,7 @@ app.get('/api/rules', (_req, res) => {
   res.json({
     pushThreshold: rule('pushThreshold'),
     listShare: rule('listShare'),
+    topShare: rule('topShare'),
     maxGroupsAtOnce: rule('maxGroupsAtOnce'),
     manualPushCooldownHours: rule('manualPushCooldownHours'),
     registrationOpen: rule('registrationOpen') === 1,

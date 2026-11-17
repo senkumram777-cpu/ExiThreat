@@ -11,6 +11,7 @@ import { BASE } from './api';
 export interface Rules {
   pushThreshold: number;
   listShare: number;
+  topShare: number;
   maxGroupsAtOnce: number;
   manualPushCooldownHours: number;
   registrationOpen: boolean;
@@ -19,6 +20,7 @@ export interface Rules {
 export const DEFAULT_RULES: Rules = {
   pushThreshold: 0.5,
   listShare: 0.2,
+  topShare: 0.4,
   maxGroupsAtOnce: 5,
   manualPushCooldownHours: 24,
   registrationOpen: true,
